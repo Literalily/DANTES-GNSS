@@ -11,25 +11,83 @@
 </head>
 
 <body>
-
     <!-- =-=-=-=-= HEADER =-=-=-=-= -->
     <header>
-        <p>Header</p>
+        <img class="headerImage" src="assets/Queens_White_Logo_Landscape.png" alt="White Compass Icon">
+        <div class="header-title">GNSS Project <span>Dashboard</span></div>
+        <div class="header-badge">Lily Crawford</div>
     </header>
 
     <!-- =-=-=-=-= NAV BAR =-=-=-=-= -->
     <nav>
-        <p>navigation</p>
+        <div class="nav-section">Sections: </div>
+        <div class="nav-section">
+            <a href="index.html" class="nav-link active">Dashboard <img class="iconImage"
+                    src="assets/compassFavicon.png" alt="Red Compass Icon"></a>
+        </div>
+
+        <div class="nav-section">
+            <a href="index.html" class="nav-link">Placeholder 1 <img class="iconImage" src="assets/globeFavicon.png"
+                    alt="Red Globe Icon"></a>
+        </div>
+
+        <div class="nav-section">
+            <a href="index.html" class="nav-link">Placeholder 2 <img class="iconImage" src="assets/atlasFavicon.png"
+                    alt="Red Atlas Icon"></a>
+        </div>
     </nav>
 
-    <!-- =-=-=-=-= FOOTER =-=-=-=-= -->
-     <footer>
-        <p>footer</p>
-     </footer>
-
+    <!-- =-=-=-=-= PAGE =-=-=-=-= -->
     <div id="page-container">
+
+        <div class="dashboard-grid">
+            <div class="card">
+                <h1>Card 1</h1>
+            </div>
+
+            <div class="card">
+                <h1>Card 2</h1>
+            </div>
+
+            <div class="card">
+                <h1>Card 3</h1>
+            </div>
+        </div>
+
         <p>body</p>
+        <h3>Normal:</h3>
+        <p>jamInd low and stable (20-40), jammingState = 1 (ok)</p>
+        <p>CN0 values spread out across satellites (e.g., 20–45 dBHz) — because real satellites are at different
+            elevations/distances, so they're never all the same strength</p>
+        <p>Position/clock drifting smoothly, not jumping</p>
+        <p>numSV and DOP varying slowly over time as satellites rise/set</p>
+
+        <h3>Jamming</h3>
+        <p>jamInd rises sharply, jammingState is warning/critial</p>
+        <p>AGC (agcCnt) jumps as the receiver tries to compensate for a raised noise floor</p>
+        <p>CN0 across the board drops or fix is lost entirely (fixType degrades)</p>
+
+        <h3>Spoofing</h3>
+        <p>Unnaturally uniform CN0, e.g. every satellite suddenly reports near-identical signal strength, suggesting a
+            spoofer is using one transmitter faking multiple "satellites," so they arrive with correlated power rather
+            than the natural spread.</p>
+        <p>Position or clock jump inconsistent with motion/velocity — a static receiver's position "teleporting," or
+            time suddenly skipping, especially if it happens without a corresponding jamming/interference flag (a
+            well-crafted spoof doesn't need to jam anything — it can just overpower the real signal cleanly).</p>
+        <p>jamInd/jammingState looking totally normal while the solution is behaving oddly — this contrast is itself a
+            signal. Real GNSS shouldn't produce impossible jumps quietly; if the interference monitor is clean but the
+            position/clock isn't, that's a mismatch worth flagging.</p>
+        <p>Sudden, implausible improvement in DOP or satellite count — more satellites appearing at once than plausible
+            for real sky geometry, or DOP becoming unnaturally good.</p>
+        <p>Carrier-phase/pseudorange inconsistency (needs RXM-RAWX) — the gold-standard check used in the research
+            literature, but a stretch goal for later.</p>
+
     </div>
+
+    <!-- =-=-=-=-= FOOTER =-=-=-=-= -->
+    <footer>
+        <p>QUB Electronics, Electrical Engineering and Computer Science</p>
+    </footer>
 </body>
 
 </html>
