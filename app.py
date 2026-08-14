@@ -15,6 +15,12 @@ def ensure_virtual_environment(venv_dir):
     # and installs dependencies from requiremnts.txt
     
     if os.path.exists(venv_dir):
+        print("\n" + "=" * 60)
+        print("          GNSS PROJECT WORKSPACE SETUP           ")
+        print("=" * 60)
+        print(f"Notice: Local environment 'venvGNSSProject' already installed at:\n{venv_dir}")
+        print("=" * 60)
+        input("Press any button to exit: ").strip().lower()
         return True  # environment exists thumbs up
 
     print("\n" + "=" * 60)

@@ -8,6 +8,9 @@
     <link rel="icon" type="image/x-icon" href="assets/globeFavicon.png">
     <link rel="stylesheet" href="css/styles.css">
     <script type="module" src="js/script.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js"></script>
+    <!-- better link more fullproof -->
 </head>
 
 <body>
@@ -41,48 +44,51 @@
     <div id="page-container">
 
         <div class="dashboard-grid">
-            <div class="card">
-                <h1>Card 1</h1>
+
+            <!-- =-=-=-=-= CARD 1 =-=-=-=-= -->
+            <!-- Deviation Map -->
+            <div class="card" style="width: 2000px">
+                <h1>Receiver 1: Position Deviation Map</h1>
+                <p id="deviation-stats" class="deviationChartStats">Calculated Centre Mean: Fetching...</p>
+                <div class="deviationChartBox">
+                    <canvas id="deviationChart"></canvas>
+                </div>
             </div>
 
+            <!-- =-=-=-=-= CARD 2 =-=-=-=-= -->
             <div class="card">
-                <h1>Card 2</h1>
+                <h1>Spoofing Detector</h1>
+                <form id="gnss-form">
+                    <label for="ip1">IP Address 1:</label><br>
+                    <input type="text" id="ip1" value="143.117.216.46:5000"
+                        style="width: 100%; margin-bottom: 10px;"><br>
+
+                    <label for="ip2">IP Address 2</label><br>
+                    <input type="text" id="ip2" value="143.117.216.46.5001"
+                        style="width: 100%; margin-bottom: 10px;"><br>
+
+                    <label for="ip3">IP Address 3</label><br>
+                    <input type="text" id="ip3" value="143.117.216.46.5002"
+                        style="width: 100%; margin-bottom: 10px;"><br>
+
+                    <button class="cardButton" type="submit">Start Tracking</button>
+                </form>
+
+                <h3 style="margin-top: 20px;">System Status</h3>
+                <div id="status-display" class="statusDisplay">Waiting for input...</div>
+                <div id="distance12-display" class="distanceDisplay">Waiting for distance 1-2 result...</div>
+                <div id="distance13-display" class="distanceDisplay">Waiting for distance 1-3 result...</div>
+                <div id="distance23-display" class="distanceDisplay">Waiting for distance 2-3 result...</div>
             </div>
 
+            <!-- =-=-=-=-= CARD 3 =-=-=-=-= -->
             <div class="card">
                 <h1>Card 3</h1>
+                <img src="assets/spoofingDiagram.png"
+                    alt="A diagram of GNSS spoofing taken from the paper GNSS_Time_Signal_Spoofing_Detector_for_Electrical_Substations"
+                    style="width: 100%;">
             </div>
         </div>
-
-        <p>body</p>
-        <h3>Normal:</h3>
-        <p>jamInd low and stable (20-40), jammingState = 1 (ok)</p>
-        <p>CN0 values spread out across satellites (e.g., 20–45 dBHz) — because real satellites are at different
-            elevations/distances, so they're never all the same strength</p>
-        <p>Position/clock drifting smoothly, not jumping</p>
-        <p>numSV and DOP varying slowly over time as satellites rise/set</p>
-
-        <h3>Jamming</h3>
-        <p>jamInd rises sharply, jammingState is warning/critial</p>
-        <p>AGC (agcCnt) jumps as the receiver tries to compensate for a raised noise floor</p>
-        <p>CN0 across the board drops or fix is lost entirely (fixType degrades)</p>
-
-        <h3>Spoofing</h3>
-        <p>Unnaturally uniform CN0, e.g. every satellite suddenly reports near-identical signal strength, suggesting a
-            spoofer is using one transmitter faking multiple "satellites," so they arrive with correlated power rather
-            than the natural spread.</p>
-        <p>Position or clock jump inconsistent with motion/velocity — a static receiver's position "teleporting," or
-            time suddenly skipping, especially if it happens without a corresponding jamming/interference flag (a
-            well-crafted spoof doesn't need to jam anything — it can just overpower the real signal cleanly).</p>
-        <p>jamInd/jammingState looking totally normal while the solution is behaving oddly — this contrast is itself a
-            signal. Real GNSS shouldn't produce impossible jumps quietly; if the interference monitor is clean but the
-            position/clock isn't, that's a mismatch worth flagging.</p>
-        <p>Sudden, implausible improvement in DOP or satellite count — more satellites appearing at once than plausible
-            for real sky geometry, or DOP becoming unnaturally good.</p>
-        <p>Carrier-phase/pseudorange inconsistency (needs RXM-RAWX) — the gold-standard check used in the research
-            literature, but a stretch goal for later.</p>
-        <p>x <br>x <br>x <br>x <br>x <br>x <br>x <br>x <br>x <br>x <br>x <br>x <br>x <br>x <br>x <br>x <br>x </p>
-
     </div>
 
     <!-- =-=-=-=-= FOOTER =-=-=-=-= -->

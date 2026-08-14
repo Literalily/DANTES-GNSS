@@ -71,7 +71,7 @@ header {
     background-color: rgba(255, 255, 255, 0.15);
     border: 1px solid rgba(255, 255, 255, 0.3);
     color: #f4f6f8;
-    font-size: 16px;
+    font-size: 15px;
     font-weight: bold;
     padding: 4px 10px;
     border-radius: 12px;
@@ -82,7 +82,7 @@ header {
 nav {
     position: sticky;
     align-items: center;
-    justify-content: center;
+    justify-content: right;
     top: 0;
     left: 0;
     width: 100%;
@@ -90,7 +90,6 @@ nav {
     background-color: #f4f6f8;
     border-bottom: 1px solid #dddddd;
     display: flex;
-    align-items: center;
     padding: 0 24px;
     z-index: 1000;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
@@ -165,9 +164,9 @@ footer {
     overflow-y: auto;
     scrollbar-width: thin;
     scrollbar-color: #888 #f1f1f1;
-    width: 800px;
+    width: 1000px;
     min-height: 400px;
-    
+
 }
 
 .card:hover {
@@ -184,11 +183,54 @@ footer {
 
 /* Responsive layout - switches to a stacked column only when the screen shrinks below 900px */
 @media (max-width: 900px) {
-    #flex-container {
+    .dashboard-grid {
         flex-direction: column;
     }
 
-    #flex-container .viewer-charts {
+    .dashboard-grid #card {
         width: 100%;
     }
+}
+
+/* =-=-=-=-= CARD 1 - Deviation Maps =-=-=-=-= */
+.deviationChartStats {
+    font-weight: bold;
+    color: #555;
+}
+
+.deviationChartBox {
+    position: relative;
+    height: 350px;
+    width: 100%;
+}
+
+/* =-=-=-=-= CARD 2 =-=-=-=-= */
+.cardButton {
+    padding: 10px;
+    background: #E30613;
+    color: white;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+    font-size: 15px;
+    font-weight: bold;
+    border-radius: 6px;
+}
+
+.cardButton:hover {
+    background: #A62321;
+}
+
+.statusDisplay {
+    padding: 10px;
+    background: rgb(207, 217, 228, 0.5);
+    color: black;
+}
+
+.distanceDisplay {
+    padding: 5px;
+    background: rgb(207, 217, 228, 0.25);
+    color: black;
 }
