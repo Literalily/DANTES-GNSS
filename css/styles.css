@@ -96,7 +96,7 @@ nav {
 }
 
 .nav-section {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: bold;
     color: #999;
     text-transform: uppercase;
@@ -233,4 +233,19 @@ footer {
     padding: 5px;
     background: rgb(207, 217, 228, 0.25);
     color: black;
+}
+
+/* =-=-=-=-= STATUS BOX =-=-=-=-= */
+.status-badge {
+    display: inline-block;
+    background-color: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: #000000;
+    font-size: 20px;
+    padding: 8px 8px;
+    border-radius: 12px;
+    margin-bottom: 6px;
+    text-align: center;
+    align-items: center;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }

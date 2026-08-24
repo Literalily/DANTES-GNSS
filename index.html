@@ -43,17 +43,34 @@
     <!-- =-=-=-=-= PAGE =-=-=-=-= -->
     <div id="page-container">
 
-        <div class="dashboard-grid">
-
+        <div class="dashboard-grid" style="height: 500px;">
             <!-- =-=-=-=-= CARD 1 =-=-=-=-= -->
             <!-- Deviation Map -->
-            <div class="card" style="width: 2000px">
+            <div class="card" style="width: 80%;">
                 <h1>Receiver 1: Position Deviation Map</h1>
                 <p id="deviation-stats" class="deviationChartStats">Calculated Centre Mean: Fetching...</p>
                 <div class="deviationChartBox">
                     <canvas id="deviationChart"></canvas>
                 </div>
             </div>
+
+            <!-- Warning Box -->
+            <div class="card" style="width: 20%;">
+                <h1>Status</h1>
+                
+                <div class="status-badge" style="background-color: #00b38a">
+                    <b>NORMAL</b><br>(separate geofences)</div>
+                <div class="status-badge" style="background-color: #F2AC42">
+                    <b>WARNING</b><br>(point leaves geofence)</div>
+                <div class="status-badge" style="background-color: #EA324C">
+                    <b>ALARM: SPOOFING DETECTED</b><br>(antenna overlap)</div>
+
+                <p>real-time distance calculations between all antenna pairs here to confirm physical separation</p>
+            </div>
+
+        </div>
+
+        <div class="dashboard-grid">
 
             <!-- =-=-=-=-= CARD 2 =-=-=-=-= -->
             <div class="card">

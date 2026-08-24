@@ -2,7 +2,6 @@
 
 // for the deviation chart
 let deviationChart = null;
-let lastLiveIndex = 0;
 // For storing points for computing live average position centre
 let totalLat = 0;
 let totalLon = 0;
@@ -30,9 +29,8 @@ const MAX_CLIENT_POINTS = 5000;
 /* =-=-=-=-= LOAD CHARTS =-=-=-=-= */
 document.addEventListener("DOMContentLoaded", async () => {
     initChart();
-    await loadInitialHistory();
-    // poll for new live log updates every second - TODO NOTE FOR LILY should I make this a longer interval?
-    setInterval(fetchLiveUpdates, 1000);
+    await loadInitialHistory(); // one-off fetch of everything recorded before this page loaded
+    connectLiveStream(); // live push connection for everything after that
 })
 
 /* =-=-=-=-= DECORATE CHART TO BE CIRCULAR LIKE A RADER =-=-=-=-= */
@@ -77,7 +75,7 @@ const circularGridPlugin = {
 // Fades a colour from light (old points) to full opacity (newest points)
 function fadeColor([r, g, b], index, total) {
     if (total <= 1) return `rgba(${r}, ${g}, ${b}, 1)`;
-    const minOpacity = 0.0001;
+    const minOpacity = 0.15; //opacity lily TODO it's here since I keep losing it
     const t = index / (total - 1); // 0 = oldest point, 1 = newest point
     const opacity = minOpacity + (1 - minOpacity) * t;
     return `rgba(${r}, ${g}, ${b}, ${opacity.toFixed(3)})`;
@@ -93,23 +91,83 @@ function ensureReceiver(receiverId) {
     return receiverSeries.get(receiverId);
 }
 
+/* =-=-=-=-= LAT/LON -> METRES CONVERSION CONSTANTS =-=-=-=-= */
+const METRES_PER_DEG_LAT = 111120;
+const METRES_PER_DEG_LON = 65315; // Assumes ~54°N latitude
+
+function computeSymmetricBounds(datasets) {
+    let maxAbs = 10;
+    datasets.forEach(ds => {
+        ds.data.forEach(pt => {
+            maxAbs = Math.max(maxAbs, Math.abs(pt.x || 0), Math.abs(pt.y || 0));
+        });
+    });
+    return maxAbs * 1.15;
+}
+
+// Shared reference point for all receivers so the chart doesn't jump around as new points stream in and each receiver shares the same origin
+let globalCenter = null;
+
+function establishGlobalCenterIfNeeded() {
+    if (globalCenter !== null) return;
+
+    let sumLat = 0, sumLon = 0, count = 0;
+    receiverSeries.forEach(series => {
+        series.points.forEach(p => {
+            sumLat += p.lat;
+            sumLon += p.lon;
+            count++;
+        });
+    });
+
+    if (count > 0) {
+        globalCenter = { lat: sumLat / count, lon: sumLon / count };
+    }
+}
+
 // Rebuilds chart.data.datasets from receiverSeries
 // one dataset per receiver, with older points faded out and the newest point drawn larger
 function syncDatasetsFromReceivers() {
-    deviationChart.data.datasets = Array.from(receiverSeries.entries()).map(([receiverId, series]) => ({
-        label: receiverId,
-        data: series.points,
-        showLine: true,
-        borderWidth: 2,
-        borderColor: `rgba(${series.color.join(', ')}, 0.35)`,
-        segment: {
-            borderColor: (ctx) => fadeColor(series.color, ctx.p0DataIndex, series.points.length)
-        },
-        pointBackgroundColor: (ctx) => fadeColor(series.color, ctx.dataIndex, series.points.length),
-        pointBorderWidth: 0,
-        pointRadius: (ctx) => ctx.dataIndex === series.points.length - 1 ? 7 : 2,
-        tension: 0.1
-    }));
+    establishGlobalCenterIfNeeded();
+    if (!globalCenter) return; // no data loaded yet
+    const receiversArray = Array.from(receiverSeries.entries());
+
+    const datasets = receiversArray.map(([receiverId, series]) => {
+        if (series.points.length === 0) return null;
+
+        // Convert points relative to the shared global centre so real distances are shown
+        const mappedData = series.points.map(pt => ({
+            x: (pt.lon - globalCenter.lon) * METRES_PER_DEG_LON,
+            y: (pt.lat - globalCenter.lat) * METRES_PER_DEG_LAT,
+            lat: pt.lat,
+            lon: pt.lon,
+            time: pt.time
+        }));
+
+        return {
+            label: receiverId,
+            data: mappedData,
+            showLine: true,
+            borderWidth: 2,
+            borderColor: `rgba(${series.color.join(', ')}, 0.35)`,
+            segment: {
+                borderColor: (ctx) => fadeColor(series.color, ctx.p0DataIndex, series.points.length)
+            },
+            pointBackgroundColor: (ctx) => fadeColor(series.color, ctx.dataIndex, series.points.length),
+            pointBorderWidth: 0,
+            pointRadius: (ctx) => ctx.dataIndex === series.points.length - 1 ? 7 : 2,
+            tension: 0.1
+        };
+    }).filter(Boolean);
+
+    deviationChart.data.datasets = datasets;
+
+    // Calculate auto-bounds based on mapped x, y coordinates
+    const bound = computeSymmetricBounds(datasets);
+    deviationChart.options.scales.x.min = -bound;
+    deviationChart.options.scales.x.max = bound;
+    deviationChart.options.scales.y.min = -bound;
+    deviationChart.options.scales.y.max = bound;
 }
 
 /* =-=-=-=-= INITIALISE CHART =-=-=-=-= */
@@ -158,6 +216,7 @@ function initChart() {
 
 /* =-=-=-=-= LOAD HISTORICAL RECEIVER DATA =-=-=-=-= */
 // runs once on ititial load but now also caps how many rows the server sends back and thins the data if there's too much history built up
+/* =-=-=-=-= LOAD HISTORICAL RECEIVER DATA =-=-=-=-= */
 async function loadInitialHistory() {
     try {
         const response = await fetch('/api/logs/history?max_points=3000');
@@ -170,8 +229,8 @@ async function loadInitialHistory() {
                 pointCount++;
 
                 const series = ensureReceiver(pt.receiver);
-                series.points.push({ x: pt.longitude, y: pt.latitude, time: pt.time });
-                // return { x: pt.longitude, y: pt.latitude, alt: pt.altitude, time: pt.time };
+                // Store raw lat and lon for local mean calculations
+                series.points.push({ lat: pt.latitude, lon: pt.longitude, time: pt.time });
             });
 
             syncDatasetsFromReceivers();
@@ -183,49 +242,59 @@ async function loadInitialHistory() {
     }
 }
 
-/* =-=-=-=-= FETCH LIVE UPDATES INCREMENTALLY =-=-=-=-= */
-async function fetchLiveUpdates() {
-    try {
-        const response = await fetch(`/api/logs/live?since=${lastLiveIndex}`);
-        const json = await response.json();
+/* =-=-=-=-= FETCH LIVE UPDATES =-=-=-=-= */
+// The server pushes each new point down a single persistent connection 
+// the moment it's parsed, so the page is never reloading
+let liveStreamSource = null;
 
-        if (json.data && json.data.length > 0) {
-            lastLiveIndex = json.next_index;
+function connectLiveStream() {
+    liveStreamSource = new EventSource('/api/logs/stream');
 
-            json.data.forEach(pt => {
-                // Update mean calculations
-                totalLat += pt.latitude;
-                totalLon += pt.longitude;
-                pointCount++;
-                const series = ensureReceiver(pt.receiver);
-                series.points.push({ x: pt.longitude, y: pt.latitude, time: pt.time });
-            });
+    liveStreamSource.onmessage = (event) => {
+        const pt = JSON.parse(event.data);
+        handleIncomingPoint(pt);
+    };
 
-            // Trim each receiver's client-side history so long sessions stay smooth
-            receiverSeries.forEach(series => {
-                if (series.points.length > MAX_CLIENT_POINTS) {
-                    series.points.splice(0, series.points.length - MAX_CLIENT_POINTS);
-                }
-            });
-
-            syncDatasetsFromReceivers();
-            // Render update without completely redrawing the chart
-            deviationChart.update('none');
-            updateMeanDisplay();
-        }
-    } catch (err) {
-        console.error("Error fetching live stream updates:", err);
-    }
+    liveStreamSource.onerror = () => {
+        // EventSource retries the connection automatically
+        console.warn("Live stream connection interrupted - browser will auto-reconnect.");
+    };
 }
 
-/* =-=-=-=-= UPDATE MEAN LOCATION POINT =-=-=-=-= */
-function updateMeanDisplay() {
-    if (pointCount > 0) {
-        const avgLat = (totalLat / pointCount).toFixed(6);
-        const avgLon = (totalLon / pointCount).toFixed(6);
-        document.getElementById('deviation-stats').innerText =
-            `Centre Mean (d): Lat ${avgLat}°, Lon ${avgLon}° | Total Sampled Points: ${pointCount}`;
+function handleIncomingPoint(pt) {
+    // Update mean calculations
+    totalLat += pt.latitude;
+    totalLon += pt.longitude;
+    pointCount++;
+
+    const series = ensureReceiver(pt.receiver);
+    // Store raw lat and lon for local mean calculations
+    series.points.push({ lat: pt.latitude, lon: pt.longitude, time: pt.time });
+
+    if (series.points.length > MAX_CLIENT_POINTS) {
+        series.points.splice(0, series.points.length - MAX_CLIENT_POINTS);
     }
+
+    syncDatasetsFromReceivers();
+    deviationChart.update('none'); // Render update without completely redrawing the chart
+    updateMeanDisplay();
+}
+
+/* =-=-=-=-= UPDATE MEAN LOCATION =-=-=-=-= */
+function updateMeanDisplay() {
+    const statsElem = document.getElementById('deviation-stats');
+    if (!statsElem || receiverSeries.size === 0) return;
+
+    let outputLines = [];
+
+    receiverSeries.forEach((series, receiverId) => {
+        if (series.points.length === 0) return;
+        const avgLat = (series.points.reduce((acc, p) => acc + p.lat, 0) / series.points.length).toFixed(6);
+        const avgLon = (series.points.reduce((acc, p) => acc + p.lon, 0) / series.points.length).toFixed(6);
+        outputLines.push(`<b>${receiverId} Mean:</b> Lat ${avgLat}°, Lon ${avgLon}° (${series.points.length} pts)`);
+    });
+
+    statsElem.innerHTML = outputLines.join('<br>');
 }
 
 /* =-=-=-=-= SEND IP ADDRESSES =-=-=-=-= */

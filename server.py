@@ -1,7 +1,7 @@
 # =-=-=-=-= IMPORTS =-=-=-=-=
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pyubx2 import UBXReader, UBX_PROTOCOL, NMEA_PROTOCOL
@@ -13,6 +13,8 @@ import datetime
 import socket
 import threading
 import queue
+import asyncio
+import json
 
 # Enable CORS so local HTML file dashboard can talk to server safely
 app = FastAPI()
@@ -39,9 +41,36 @@ gnss_queue = queue.Queue()
 live_data_buffer = []
 buffer_lock = threading.Lock()
 
+# =-=-=-=-= SSE (SERVER-SENT EVENTS) SUBSCRIBERS =-=-=-=-=
+# Instead of the browser polling every second, each connected browser tab gets
+# its own asyncio.Queue here. The background worker thread pushes new points
+# into every subscriber's queue as soon as they're parsed, and the /api/logs/stream
+# endpoint streams them straight out over one long-lived HTTP connection.
+sse_subscribers = []
+sse_subscribers_lock = threading.Lock()
+main_event_loop = None  # set on FastAPI startup; needed to safely hand data from the worker thread to asyncio
+
+
+@app.on_event("startup")
+async def capture_event_loop():
+    global main_event_loop
+    main_event_loop = asyncio.get_running_loop()
+
+
+def broadcast_to_subscribers(item):
+    # Called from the background worker thread (not async), so we use
+    # call_soon_threadsafe to safely wake up each subscriber's asyncio queue.
+    if main_event_loop is None:
+        return
+    with sse_subscribers_lock:
+        subscribers = list(sse_subscribers)
+    for subscriber_queue in subscribers:
+        main_event_loop.call_soon_threadsafe(subscriber_queue.put_nowait, item)
+
 # GNSS receiver configuration to track multiple receivers at once
 # every point recorded is tagged with the "host:port" it came from so the dashboard can tell the receivers apart
 RECEIVERS = [
+    {"host": "143.117.216.46", "port": 5000},
     {"host": "143.117.216.46", "port": 5000},
     {"host": "143.117.216.46", "port": 5001},
     {"host": "143.117.216.46", "port": 5002}
@@ -222,6 +251,9 @@ def data_processor_thread():
             with buffer_lock:
                 item['id'] = len(live_data_buffer)
                 live_data_buffer.append(item)
+                
+            # Push straight to browser instead of waiting for it to poll
+            broadcast_to_subscribers(item)
 
             gnss_queue.task_done()
             print(f"[SUCCESS] Saved -> Datetime: {item['time']} | Lat: {item['latitude']} | Lon: {item['longitude']} | Alt: {item['altitude']}m | Receiver: {item['receiver']}")
@@ -325,6 +357,30 @@ def get_live_updates(since: int = 0):
         # "connection_error": connection_status["error_message"]
         "connection_status": connection_status
     })
+    
+@app.get("/api/logs/stream")
+async def stream_logs(request: Request):
+    # Each browser tab gets its own queue registered above; the worker thread pushes into it via broadcast_to_subscribers() whenever a new point is parsed.
+    client_queue = asyncio.Queue()
+    with sse_subscribers_lock:
+        sse_subscribers.append(client_queue)
+
+    async def event_generator():
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    item = await asyncio.wait_for(client_queue.get(), timeout=15.0)
+                    yield f"data: {json.dumps(item)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keep-alive\n\n"
+        finally:
+            with sse_subscribers_lock:
+                if client_queue in sse_subscribers:
+                    sse_subscribers.remove(client_queue)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @app.get("/")
 @app.get("/index.html")
