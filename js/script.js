@@ -8,6 +8,25 @@ let totalLat = 0;
 let totalLon = 0;
 let pointCount = 0;
 
+
+// Map<receiverId, { points: [{x, y, time}], color: [r, g, b] }>
+//Grouping data by receiver so mulptiple receivers can be shown at once in different colours
+const receiverSeries = new Map();
+
+const COLOR_PALETTE = [
+    [227, 6, 19],    // red
+    [54, 162, 235],  // blue
+    [46, 184, 92],   // green
+    [255, 159, 64],  // orange
+    [153, 102, 255], // purple
+    [0, 188, 212],   // cyan
+];
+let nextColorIndex = 0;
+
+// Safety cap for load times - oldest points are dropped once a receiver passes this
+// The full history always stays in the CSV on the server
+const MAX_CLIENT_POINTS = 5000;
+
 /* =-=-=-=-= LOAD CHARTS =-=-=-=-= */
 document.addEventListener("DOMContentLoaded", async () => {
     initChart();
@@ -24,12 +43,12 @@ const circularGridPlugin = {
         const xAxis = chart.scales.x;
         const yAxis = chart.scales.y;
 
-        // Find the mathematical center of the current view
-        const centerX = xAxis.getPixelForValue((xAxis.max + xAxis.min) / 2);
-        const centerY = yAxis.getPixelForValue((yAxis.max + yAxis.min) / 2);
+        // Find the mathematical centre of the current view
+        const centreX = xAxis.getPixelForValue((xAxis.max + xAxis.min) / 2);
+        const centreY = yAxis.getPixelForValue((yAxis.max + yAxis.min) / 2);
 
         // Determine the maximum radius that fits in the canvas
-        const maxRadius = Math.min(xAxis.right - centerX, centerY - yAxis.top);
+        const maxRadius = Math.min(xAxis.right - centreX, centreY - yAxis.top);
 
         ctx.save();
         ctx.strokeStyle = 'rgba(150, 150, 150, 0.3)'; // Faint grey rings
@@ -38,84 +57,75 @@ const circularGridPlugin = {
         // Draw 4 concentric circular rings
         for (let i = 1; i <= 4; i++) {
             ctx.beginPath();
-            ctx.arc(centerX, centerY, maxRadius * (i / 4), 0, 2 * Math.PI);
+            ctx.arc(centreX, centreY, maxRadius * (i / 4), 0, 2 * Math.PI);
             ctx.stroke();
         }
 
         // Draw vertical and horizontal crosshairs
         ctx.beginPath();
-        ctx.moveTo(centerX, yAxis.top);
-        ctx.lineTo(centerX, yAxis.bottom);
-        ctx.moveTo(xAxis.left, centerY);
-        ctx.lineTo(xAxis.right, centerY);
+        ctx.moveTo(centreX, yAxis.top);
+        ctx.lineTo(centreX, yAxis.bottom);
+        ctx.moveTo(xAxis.left, centreY);
+        ctx.lineTo(xAxis.right, centreY);
         ctx.stroke();
 
         ctx.restore();
     }
 };
 
+/* =-=-=-=-= COLOUR HELPER =-=-=-=-= */
+// Fades a colour from light (old points) to full opacity (newest points)
+function fadeColor([r, g, b], index, total) {
+    if (total <= 1) return `rgba(${r}, ${g}, ${b}, 1)`;
+    const minOpacity = 0.0001;
+    const t = index / (total - 1); // 0 = oldest point, 1 = newest point
+    const opacity = minOpacity + (1 - minOpacity) * t;
+    return `rgba(${r}, ${g}, ${b}, ${opacity.toFixed(3)})`;
+}
+
+// Ensures a receiver has an entry in receiverSeries, assigning it the next palette colour the first time it's seen.
+function ensureReceiver(receiverId) {
+    if (!receiverSeries.has(receiverId)) {
+        const color = COLOR_PALETTE[nextColorIndex % COLOR_PALETTE.length];
+        nextColorIndex++;
+        receiverSeries.set(receiverId, { points: [], color });
+    }
+    return receiverSeries.get(receiverId);
+}
+
+// Rebuilds chart.data.datasets from receiverSeries
+// one dataset per receiver, with older points faded out and the newest point drawn larger
+function syncDatasetsFromReceivers() {
+    deviationChart.data.datasets = Array.from(receiverSeries.entries()).map(([receiverId, series]) => ({
+        label: receiverId,
+        data: series.points,
+        showLine: true,
+        borderWidth: 2,
+        borderColor: `rgba(${series.color.join(', ')}, 0.35)`,
+        segment: {
+            borderColor: (ctx) => fadeColor(series.color, ctx.p0DataIndex, series.points.length)
+        },
+        pointBackgroundColor: (ctx) => fadeColor(series.color, ctx.dataIndex, series.points.length),
+        pointBorderWidth: 0,
+        pointRadius: (ctx) => ctx.dataIndex === series.points.length - 1 ? 7 : 2,
+        tension: 0.1
+    }));
+}
+
 /* =-=-=-=-= INITIALISE CHART =-=-=-=-= */
 function initChart() {
     const canvasElement = document.getElementById('deviationChart');
 
-    // Progressive Line Animation Configuration
-    const totalDuration = 2000;
-    const delayBetweenPoints = totalDuration / 100;
-
-    const animation = {
-        x: {
-            type: 'number',
-            easing: 'linear',
-            duration: delayBetweenPoints,
-            from: NaN,
-            delay(ctx) {
-                if (ctx.type !== 'data' || ctx.xStarted) return 0;
-                ctx.xStarted = true;
-                return ctx.index * delayBetweenPoints;
-            }
-        },
-        y: {
-            type: 'number',
-            easing: 'linear',
-            duration: delayBetweenPoints,
-            from: NaN,
-            delay(ctx) {
-                if (ctx.type !== 'data' || ctx.yStarted) return 0;
-                ctx.yStarted = true;
-                return ctx.index * delayBetweenPoints;
-            }
-        }
-    };
-
     deviationChart = new Chart(canvasElement, {
         type: 'scatter',
-        plugins: [circularGridPlugin], // Inject the custom circular grid
+        plugins: [circularGridPlugin], // Inject custom circular grid
         data: {
-            datasets: [
-                {
-                    label: 'Historical Path',
-                    data: [],
-                    showLine: true, // Connect the dots!
-                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                    borderColor: 'rgba(54, 162, 235, 0.6)',
-                    borderWidth: 2,
-                    pointRadius: 2, // Smaller points to emphasize the line
-                    tension: 0.1 // Slight curve to the connecting lines
-                },
-                {
-                    label: 'Latest Position',
-                    data: [],
-                    backgroundColor: '#E30613',
-                    pointRadius: 8,
-                    pointHoverRadius: 10
-                }
-            ]
+            datasets: []
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             aspectRatio: 1, // Forces the chart area to remain perfectly square for circular rings
-            animation: animation, // Apply progressive animation
             scales: {
                 x: {
                     display: false // Hide the default square grid lines and axis
@@ -125,8 +135,16 @@ function initChart() {
                 }
             },
             plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: { boxWidth: 12 }
+                },
                 tooltip: {
                     callbacks: {
+                        title: function (items) {
+                            return items.length ? `Receiver: ${items[0].dataset.label}` : '';
+                        },
                         label: function (ctx) {
                             const pt = ctx.raw;
                             return `Time: ${pt.time} | Lat: ${pt.y.toFixed(6)}, Lon: ${pt.x.toFixed(6)}`;
@@ -139,27 +157,24 @@ function initChart() {
 }
 
 /* =-=-=-=-= LOAD HISTORICAL RECEIVER DATA =-=-=-=-= */
-// hopefully should only run one on the initial load to minimise loading times
+// runs once on ititial load but now also caps how many rows the server sends back and thins the data if there's too much history built up
 async function loadInitialHistory() {
     try {
-        const response = await fetch('/api/logs/history');
+        const response = await fetch('/api/logs/history?max_points=3000');
         const json = await response.json();
 
         if (json.data && json.data.length > 0) {
-            const historicalData = json.data.map(pt => {
+            json.data.forEach(pt => {
                 totalLat += pt.latitude;
                 totalLon += pt.longitude;
                 pointCount++;
-                return { x: pt.longitude, y: pt.latitude, alt: pt.altitude, time: pt.time };
+
+                const series = ensureReceiver(pt.receiver);
+                series.points.push({ x: pt.longitude, y: pt.latitude, time: pt.time });
+                // return { x: pt.longitude, y: pt.latitude, alt: pt.altitude, time: pt.time };
             });
 
-            // append all historical data points to dataset 0
-            deviationChart.data.datasets[0].data = historicalData;
-
-            // Set latest position marker
-            const latest = historicalData[historicalData.length - 1];
-            deviationChart.data.datasets[1].data = [latest];
-
+            syncDatasetsFromReceivers();
             deviationChart.update();
             updateMeanDisplay();
         }
@@ -178,20 +193,22 @@ async function fetchLiveUpdates() {
             lastLiveIndex = json.next_index;
 
             json.data.forEach(pt => {
-                const newPoint = { x: pt.longitude, y: pt.latitude, alt: pt.altitude, time: pt.time };
-
-                // Add to scatter point cloud chart
-                deviationChart.data.datasets[0].data.push(newPoint);
-
                 // Update mean calculations
                 totalLat += pt.latitude;
                 totalLon += pt.longitude;
                 pointCount++;
-
-                // Update latest position
-                deviationChart.data.datasets[1].data = [newPoint];
+                const series = ensureReceiver(pt.receiver);
+                series.points.push({ x: pt.longitude, y: pt.latitude, time: pt.time });
             });
 
+            // Trim each receiver's client-side history so long sessions stay smooth
+            receiverSeries.forEach(series => {
+                if (series.points.length > MAX_CLIENT_POINTS) {
+                    series.points.splice(0, series.points.length - MAX_CLIENT_POINTS);
+                }
+            });
+
+            syncDatasetsFromReceivers();
             // Render update without completely redrawing the chart
             deviationChart.update('none');
             updateMeanDisplay();
@@ -207,7 +224,7 @@ function updateMeanDisplay() {
         const avgLat = (totalLat / pointCount).toFixed(6);
         const avgLon = (totalLon / pointCount).toFixed(6);
         document.getElementById('deviation-stats').innerText =
-            `Center Mean (d): Lat ${avgLat}°, Lon ${avgLon}° | Total Sampled Points: ${pointCount}`;
+            `Centre Mean (d): Lat ${avgLat}°, Lon ${avgLon}° | Total Sampled Points: ${pointCount}`;
     }
 }
 
