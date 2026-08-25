@@ -1,3 +1,4 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html>
 
@@ -6,7 +7,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GNSS Project</title>
     <link rel="icon" type="image/x-icon" href="assets/globeFavicon.png">
-    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="style/styles.css">
     <script type="module" src="js/script.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js/dist/chart.umd.min.js"></script>
@@ -43,29 +44,43 @@
     <!-- =-=-=-=-= PAGE =-=-=-=-= -->
     <div id="page-container">
 
-        <div class="dashboard-grid" style="height: 500px;">
-            <!-- =-=-=-=-= CARD 1 =-=-=-=-= -->
-            <!-- Deviation Map -->
-            <div class="card" style="width: 80%;">
-                <h1>Receiver 1: Position Deviation Map</h1>
-                <p id="deviation-stats" class="deviationChartStats">Calculated Centre Mean: Fetching...</p>
+        <div class="dashboard-grid map-row">
+
+            <!-- =-=-=-=-= CARD 1 - Deviation Map =-=-=-=-= -->
+            <div class="card card-map">
+                <h1>Position Deviation Map</h1>
                 <div class="deviationChartBox">
                     <canvas id="deviationChart"></canvas>
                 </div>
             </div>
 
-            <!-- Warning Box -->
-            <div class="card" style="width: 20%;">
+            <!-- Warning Box (only one badge is ever visible at a time)-->
+            <div class="card">
                 <h1>Status</h1>
-                
-                <div class="status-badge" style="background-color: #00b38a">
-                    <b>NORMAL</b><br>(separate geofences)</div>
-                <div class="status-badge" style="background-color: #F2AC42">
-                    <b>WARNING</b><br>(point leaves geofence)</div>
-                <div class="status-badge" style="background-color: #EA324C">
-                    <b>ALARM: SPOOFING DETECTED</b><br>(antenna overlap)</div>
 
-                <p>real-time distance calculations between all antenna pairs here to confirm physical separation</p>
+                <div id="status-badge-normal" class="status-badge status-badge-active"
+                    style="background-color: #00b38a">
+                    <b>NORMAL</b><br>(separate geofences)
+                </div>
+                <div id="status-badge-warning" class="status-badge" style="background-color: #F2AC42">
+                    <b>WARNING</b><br>(point leaves geofence)
+                </div>
+                <div id="status-badge-alarm" class="status-badge" style="background-color: #EA324C">
+                    <b>ALARM: SPOOFING DETECTED</b><br>(antenna overlap)
+                </div>
+                <div id="status-badge-error" class="status-badge" style="background-color: #A62321">
+                    <b>ERROR</b><br><span id="status-error-detail">(details)</span>
+                </div>
+
+                <p id="deviation-stats" class="deviationChartStats">Calculated Centre Mean: Fetching...</p>
+
+                <p>5000 ←→ 5001 = X m</p>
+                <p>5001 ←→ 5002 = X m</p>
+                <p>5002 ←→ 5000 = X m</p>
+
+                <img src="assets/spoofingDiagram.png"
+                    alt="A diagram of GNSS spoofing taken from the paper GNSS_Time_Signal_Spoofing_Detector_for_Electrical_Substations"
+                    style="width: 100%;">
             </div>
 
         </div>
@@ -98,13 +113,6 @@
                 <div id="distance23-display" class="distanceDisplay">Waiting for distance 2-3 result...</div>
             </div>
 
-            <!-- =-=-=-=-= CARD 3 =-=-=-=-= -->
-            <div class="card">
-                <h1>Card 3</h1>
-                <img src="assets/spoofingDiagram.png"
-                    alt="A diagram of GNSS spoofing taken from the paper GNSS_Time_Signal_Spoofing_Detector_for_Electrical_Substations"
-                    style="width: 100%;">
-            </div>
         </div>
     </div>
 

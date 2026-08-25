@@ -27,11 +27,15 @@ app.add_middleware(
 )
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
+
+print(f"[DEBUG] script_dir = {script_dir}")
+print(f"[DEBUG] style folder exists: {os.path.exists(os.path.join(script_dir, 'style'))}")
+
 LOGS_DIR = os.path.join(script_dir, "logs") #LOGS_DIR is where the historical data is held
 os.makedirs(LOGS_DIR, exist_ok=True)
 
 # Mount static asset folders safely
-for folder in ["css", "js", "assets"]:
+for folder in ["style", "js", "assets"]:
     target = os.path.join(script_dir, folder)
     if os.path.exists(target):
         app.mount(f"/{folder}", StaticFiles(directory=target), name=folder)
@@ -70,10 +74,9 @@ def broadcast_to_subscribers(item):
 # GNSS receiver configuration to track multiple receivers at once
 # every point recorded is tagged with the "host:port" it came from so the dashboard can tell the receivers apart
 RECEIVERS = [
-    {"host": "143.117.216.46", "port": 5000},
-    {"host": "143.117.216.46", "port": 5000},
+    {"host": "143.117.216.46", "port": 5002},
     {"host": "143.117.216.46", "port": 5001},
-    {"host": "143.117.216.46", "port": 5002}
+    {"host": "143.117.216.46", "port": 5000}
 ]
  
 # System and Connection Status Tracking - one entry per receiver
@@ -386,6 +389,7 @@ async def stream_logs(request: Request):
 @app.get("/index.html")
 def get_dashboard():
     return FileResponse(os.path.join(script_dir, "index.html"))
+
 
 # =-=-=-=-= MAIN =-=-=-=-=
 if __name__ == "__main__":

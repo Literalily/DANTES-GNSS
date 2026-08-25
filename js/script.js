@@ -33,7 +33,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     connectLiveStream(); // live push connection for everything after that
 })
 
-/* =-=-=-=-= DECORATE CHART TO BE CIRCULAR LIKE A RADER =-=-=-=-= */
+/* =-=-=-=-= DECORATE CHART =-=-=-=-= */
 const circularGridPlugin = {
     id: 'circularGrid',
     beforeDraw: (chart) => {
@@ -47,25 +47,47 @@ const circularGridPlugin = {
 
         // Determine the maximum radius that fits in the canvas
         const maxRadius = Math.min(xAxis.right - centreX, centreY - yAxis.top);
+        // meters
+        const maxMetres = (xAxis.max - xAxis.min) / 2;
 
         ctx.save();
-        ctx.strokeStyle = 'rgba(150, 150, 150, 0.3)'; // Faint grey rings
+        ctx.strokeStyle = 'rgba(150, 150, 150, 0.3)'; // Faint grey rings        	
+        ctx.fillStyle = 'rgba(166, 35, 33, 0.9)'
+        ctx.font = '11px Arial';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
         ctx.lineWidth = 1;
 
-        // Draw 4 concentric circular rings
+        // Draw 4 circular rings
         for (let i = 1; i <= 4; i++) {
+            const r = maxRadius * (i / 4);
             ctx.beginPath();
-            ctx.arc(centreX, centreY, maxRadius * (i / 4), 0, 2 * Math.PI);
+            ctx.arc(centreX, centreY, r, 0, 2 * Math.PI);
             ctx.stroke();
+            const ringMetres = (maxMetres * (i / 4)).toFixed(1);
+            // label in the top right of each ring
+            ctx.fillText(`${ringMetres}m`, centreX + r * Math.SQRT1_2 + 4, centreY - r * Math.SQRT1_2);
         }
 
         // Draw vertical and horizontal crosshairs
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)'; //crosshairs black
         ctx.beginPath();
         ctx.moveTo(centreX, yAxis.top);
         ctx.lineTo(centreX, yAxis.bottom);
         ctx.moveTo(xAxis.left, centreY);
         ctx.lineTo(xAxis.right, centreY);
         ctx.stroke();
+
+        // Compass labels: +y (up) = North, +x (right) = East
+        ctx.fillStyle = 'rgba(166, 35, 33, 0.9)'; // compass points dark red
+        ctx.font = 'bold 13px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('N', centreX, yAxis.top - 10);
+        ctx.fillText('S', centreX, yAxis.bottom + 14);
+        ctx.textAlign = 'left';
+        ctx.fillText('E', xAxis.right + 6, centreY);
+        ctx.textAlign = 'right';
+        ctx.fillText('W', xAxis.left - 6, centreY);
 
         ctx.restore();
     }
@@ -75,7 +97,7 @@ const circularGridPlugin = {
 // Fades a colour from light (old points) to full opacity (newest points)
 function fadeColor([r, g, b], index, total) {
     if (total <= 1) return `rgba(${r}, ${g}, ${b}, 1)`;
-    const minOpacity = 0.15; //opacity lily TODO it's here since I keep losing it
+    const minOpacity = 0.05; //opacity lily TODO it's here since I keep losing it
     const t = index / (total - 1); // 0 = oldest point, 1 = newest point
     const opacity = minOpacity + (1 - minOpacity) * t;
     return `rgba(${r}, ${g}, ${b}, ${opacity.toFixed(3)})`;
@@ -96,7 +118,8 @@ const METRES_PER_DEG_LAT = 111120;
 const METRES_PER_DEG_LON = 65315; // Assumes ~54°N latitude
 
 function computeSymmetricBounds(datasets) {
-    let maxAbs = 10;
+    // floor of 6m that grows automatically if a point deviates further
+    let maxAbs = 6;
     datasets.forEach(ds => {
         ds.data.forEach(pt => {
             maxAbs = Math.max(maxAbs, Math.abs(pt.x || 0), Math.abs(pt.y || 0));
@@ -183,7 +206,6 @@ function initChart() {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            aspectRatio: 1, // Forces the chart area to remain perfectly square for circular rings
             scales: {
                 x: {
                     display: false // Hide the default square grid lines and axis
@@ -196,7 +218,10 @@ function initChart() {
                 legend: {
                     display: true,
                     position: 'top',
-                    labels: { boxWidth: 12 }
+                    labels: {
+                        boxWidth: 12,
+                        color: '#2166a6' //TODO LILY fix colour
+                    }
                 },
                 tooltip: {
                     callbacks: {
@@ -242,6 +267,34 @@ async function loadInitialHistory() {
     }
 }
 
+/* =-=-=-=-= SYSTEM STATUS BADGE =-=-=-=-= */
+// makes it so only one of the status badges shows at any one time by 
+// swapping status-badge-active onto whichever one is applicable
+// normal is default
+
+const STATUS_BADGE_IDS = {
+    normal: 'status-badge-normal',
+    warning: 'status-badge-warning',
+    alarm: 'status-badge-alarm',
+    error: 'status-badge-error'
+};
+
+function setSystemStatus(state, detailMessage) {
+    Object.values(STATUS_BADGE_IDS).forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.remove('status-badge-active');
+    });
+
+    const activeId = STATUS_BADGE_IDS[state];
+    const activeEl = activeId && document.getElementById(activeId);
+    if (activeEl) activeEl.classList.add('status-badge-active');
+
+    if (state === 'error') {
+        const detailEl = document.getElementById('status-error-detail');
+        if (detailEl) detailEl.textContent = detailMessage || 'Unknown error.';
+    }
+}
+
 /* =-=-=-=-= FETCH LIVE UPDATES =-=-=-=-= */
 // The server pushes each new point down a single persistent connection 
 // the moment it's parsed, so the page is never reloading
@@ -250,6 +303,11 @@ let liveStreamSource = null;
 function connectLiveStream() {
     liveStreamSource = new EventSource('/api/logs/stream');
 
+    // when connection is established or reopened, clears previous ERROR badge
+    liveStreamSource.onopen = () => {
+        setSystemStatus('normal');
+    };
+
     liveStreamSource.onmessage = (event) => {
         const pt = JSON.parse(event.data);
         handleIncomingPoint(pt);
@@ -257,6 +315,12 @@ function connectLiveStream() {
 
     liveStreamSource.onerror = () => {
         // EventSource retries the connection automatically
+        const timestamp = new Date().toLocaleTimeString();
+        setSystemStatus('error',
+            `[${timestamp}] Lost connection to /api/logs/stream. Possible cause: ` +
+            `server.py has been stopped or the launch.bat window was closed. ` +
+            `Retrying automatically in the background...`
+        );
         console.warn("Live stream connection interrupted - browser will auto-reconnect.");
     };
 }
@@ -331,10 +395,22 @@ document.getElementById('gnss-form').addEventListener('submit', async function (
         D13.innerText = "Distance between antennas -> 1&3: " + data.distance13;
         D23.innerText = "Distance between antennas -> 2&3: " + data.distance23;
 
+        // reflects the detector's result in the same single-badge status display
+        if (data.status && data.status.startsWith("WARNING")) {
+            setSystemStatus('warning');
+        } else if (data.status && data.status.startsWith("NORMAL")) {
+            setSystemStatus('normal');
+        }
+
     } catch (error) {
         statusDisplay.innerText = "Error connecting to server.";
         D12.innerText = ":("
         D13.innerText = ":("
         D23.innerText = ":("
+
+        setSystemStatus('error',
+            `[${new Date().toLocaleTimeString()}] Failed to reach /api/start_tracking.` +
+            `Check that serve.py is running and the IP addresses above are correct.`
+        );
     }
 });
