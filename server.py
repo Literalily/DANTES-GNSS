@@ -1,10 +1,11 @@
 # =-=-=-=-= IMPORTS =-=-=-=-=
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from pyubx2 import UBXReader, UBX_PROTOCOL, NMEA_PROTOCOL
+from collections import deque
 import math
 import os
 import sys
@@ -15,6 +16,8 @@ import threading
 import queue
 import asyncio
 import json
+import signal
+import subprocess
 
 # Enable CORS so local HTML file dashboard can talk to server safely
 app = FastAPI()
@@ -25,6 +28,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# convert lat/lon into meters (also assumes 54o in case I want to make it dynamic later - TODO lily)
+METRES_PER_DEG_LAT = 111120
+METRES_PER_DEG_LON = 65315
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -273,12 +280,6 @@ class IPConfig(BaseModel):
     ip_3: str
 
 
-def calculate_distance(latA, lonA, latB, lonB):
-    delta_lat_m = (latA - latB) * 111120
-    delta_lon_m = (lonA - lonB) * 65315  #assumes 54'N latitude, fix to be dynamic? TODO
-    return math.sqrt(delta_lat_m**2 + delta_lon_m**2)
-
-
 # Start one background receiver thread per configured receiver, plus the logger
 for r in RECEIVERS:
     threading.Thread(target=gnss_socket_thread, args=(r["host"], r["port"]), daemon=True).start()
@@ -286,38 +287,12 @@ threading.Thread(target=data_processor_thread, daemon=True).start()
 
 
 # =-=-=-=-= APIs =-=-=-=-=
-@app.post("/api/start_tracking")
-def start_tracking(config: IPConfig):
-    lat1, lon1 = 54.5822, -5.9371
-    lat2, lon2 = 54.5822, -5.9371 # Simulating an attack (same location)
-    lat3, lon3 = 54.5825, -5.9375  # Simulating safe (different location)
-
-    # Calculate distance betwwen all antennas
-    dist_1_2 = calculate_distance(lat1, lon1, lat2, lon2)
-    dist_1_3 = calculate_distance(lat1, lon1, lat3, lon3)
-    dist_2_3 = calculate_distance(lat2, lon2, lat3, lon3)
-
-    geofence = 5.0  #can change to be more strict e.g. might change to 4.88? TODO
-    if dist_1_2 < geofence or dist_1_3 < geofence or dist_2_3 < geofence: # Evaluate against the 5-meter geofence
-        system_status = "WARNING: Spoofing Detected! Multiple antennas are reporting the same location."
-    else:
-        system_status = "NORMAL: All antennas are separated."
-
-    # Return the status to Card 2 on the frontend web
-    return {
-        "status": system_status, 
-        "distance12": dist_1_2, 
-        "distance13": dist_1_3, 
-        "distance23": dist_2_3
-    }
-
-
 @app.get("/api/logs/history")
 def get_historical_logs(max_points: int = 3000):
-    # Scans ./logs folder and loads all historical points on app launch.
+    # Scans ./logs folder and loads all historical points on launch.
     # If there are more rows than max_points, the data is evenly thinned
     # out (always keeping the most recent point) so the chart stays fast
-    # and readable instead of trying to plot every single raw sample.
+    # and readable instead of trying to plot every single raw sample
     historical_points = []
     log_files = sorted([f for f in os.listdir(LOGS_DIR) if f.endswith('.csv')])
     for log_file in log_files:
@@ -346,6 +321,111 @@ def get_historical_logs(max_points: int = 3000):
     return JSONResponse(content={"count": len(historical_points), "total_recorded": total, "data": historical_points})
  
 
+@app.get("/api/logs/distance_stats")
+def get_distance_stats(max_points: int = 20000):
+    # v similar to /api/logs/history but for the table instead of the chart
+    # has a larger cap and reads from tail
+    points = []
+    log_files = sorted([f for f in os.listdir(LOGS_DIR) if f.endswith('.csv')])
+    total_recorded = 0
+    for log_file in log_files:
+        filepath = os.path.join(LOGS_DIR, log_file)
+        with open(filepath, 'r') as f:
+            next(f, None)  # skip header
+            tail_lines = deque(f, maxlen=max_points)
+        for line in tail_lines:
+            total_recorded += 1
+            parts = line.strip().split(',')
+            if len(parts) == 5:
+                try:
+                    points.append({
+                        "latitude": float(parts[1]),
+                        "longitude": float(parts[2]),
+                        "receiver": parts[4]
+                    })
+                except ValueError:
+                    continue
+ 
+    capped = total_recorded >= max_points
+    if len(points) > max_points:
+        points = points[-max_points:]
+ 
+    # Group points per receiver, in chronological order
+    by_receiver = {}
+    for pt in points:
+        by_receiver.setdefault(pt["receiver"], []).append(pt)
+ 
+    # --- Per-receiver lat/lon stats (mean / max / min) ---
+    receiver_stats = {}
+    for receiver_id, pts in by_receiver.items():
+        lats = [p["latitude"] for p in pts]
+        lons = [p["longitude"] for p in pts]
+        receiver_stats[receiver_id] = {
+            "port": receiver_id.split(":")[-1],
+            "count": len(pts),
+            "avg_lat": sum(lats) / len(lats),
+            "avg_lon": sum(lons) / len(lons),
+            "max_lat": max(lats),
+            "max_lon": max(lons),
+            "min_lat": min(lats),
+            "min_lon": min(lons),
+        }
+ 
+    # receivers log independently, so pairing is done by matching
+    # each receiver's Nth-most-recent reading to the other's Nth-most-recent
+    # reading (not by exact timestamp). Good enough to characterise how far
+    # apart reported positions drift, but not a simultaneous fix-to-fix
+    # distance if receivers are logging at different rates.
+    receiver_ids = list(by_receiver.keys())
+    pair_stats = {}
+    for i in range(len(receiver_ids)):
+        for j in range(i + 1, len(receiver_ids)):
+            id_a, id_b = receiver_ids[i], receiver_ids[j]
+            pts_a, pts_b = by_receiver[id_a][::-1], by_receiver[id_b][::-1]  # align from most-recent backwards
+            n = min(len(pts_a), len(pts_b))
+            if n == 0:
+                continue
+ 
+            lat_diffs, lon_diffs, distances = [], [], []
+            for k in range(n):
+                lat_diff = pts_a[k]["latitude"] - pts_b[k]["latitude"]
+                lon_diff = pts_a[k]["longitude"] - pts_b[k]["longitude"]
+                dy = lat_diff * METRES_PER_DEG_LAT
+                dx = lon_diff * METRES_PER_DEG_LON
+                distances.append(math.sqrt(dx * dx + dy * dy))
+                lat_diffs.append(lat_diff)
+                lon_diffs.append(lon_diff)
+ 
+            max_idx = distances.index(max(distances))
+            min_idx = distances.index(min(distances))
+ 
+            pair_key = f"{id_a.split(':')[-1]}-{id_b.split(':')[-1]}"
+            pair_stats[pair_key] = {
+                "n_points_compared": n,
+                "average": {
+                    "lat_diff": sum(lat_diffs) / n,
+                    "lon_diff": sum(lon_diffs) / n,
+                    "distance_m": sum(distances) / n,
+                },
+                "max_distance": {
+                    "lat_diff": lat_diffs[max_idx],
+                    "lon_diff": lon_diffs[max_idx],
+                    "distance_m": distances[max_idx],
+                },
+                "min_distance": {
+                    "lat_diff": lat_diffs[min_idx],
+                    "lon_diff": lon_diffs[min_idx],
+                    "distance_m": distances[min_idx],
+                },
+            }
+ 
+    return JSONResponse(content={
+        "total_recorded": total_recorded,
+        "points_considered": len(points),
+        "capped": capped,
+        "receivers": receiver_stats,
+        "pairs": pair_stats
+    })
 
 @app.get("/api/logs/live")
 #Fetches ONLY new data points recorded since the given index
@@ -384,6 +464,27 @@ async def stream_logs(request: Request):
                     sse_subscribers.remove(client_queue)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+# for the 'restart server' button
+def run_launch_script():
+    # Terminate current server instance
+    os.kill(os.getpid(), signal.SIGINT)
+    # runs launch.bat in a separate process
+    subprocess.Popen(["launch.bat"], shell=True, creationflags=subprocess.CREATE_NEW_CONSOLE)
+
+
+@app.post("/api/restart")
+def restart_server(background_tasks: BackgroundTasks):
+    # Schedules execution immediately after the response is sent
+    background_tasks.add_task(run_launch_script)
+    return {"message": "Server restarting..."}
+
+# for the 'stop server' button
+@app.post("/api/shutdown")
+def shutdown_server():
+    # Sends a SIGINT signal to the process, stopping uvicorn and closing the cmd window
+    os.kill(os.getpid(), signal.SIGINT)
+    return {"message": "Server shutting down..."}
 
 @app.get("/")
 @app.get("/index.html")

@@ -82,7 +82,7 @@ header {
 nav {
     position: sticky;
     align-items: center;
-    justify-content: right;
+    justify-content: flex-end;
     top: 0;
     left: 0;
     width: 100%;
@@ -103,6 +103,11 @@ nav {
     margin-right: 40px;
     margin-left: 40px;
     text-decoration: none;
+}
+
+nav .nav-section:first-child {
+    margin-right: auto;
+    margin-left: 0;
 }
 
 .nav-link {
@@ -128,7 +133,29 @@ nav {
 
 .iconImage {
     width: 30px;
-    height: 30px;
+    aspect-ratio: 1/1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cardButton {
+    padding: 10px;
+    background: #E30613;
+    color: white;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+    font-size: 15px;
+    font-weight: bold;
+    border-radius: 6px;
+    height: 40px;
+}
+
+.cardButton:hover {
+    background: #A62321;
 }
 
 /* =-=-=-=-= FOOTER =-=-=-=-= */
@@ -154,7 +181,7 @@ footer {
 
 .dashboard-grid.map-row {
     display: grid;
-    grid-template-columns: 4fr 1fr;
+    grid-template-columns: 3fr 2fr;
     gap: 20px;
     width: 100%;
     align-items: flex-start;
@@ -226,35 +253,6 @@ footer {
 }
 
 /* =-=-=-=-= CARD 2 =-=-=-=-= */
-.cardButton {
-    padding: 10px;
-    background: #E30613;
-    color: white;
-    border: none;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-    font-size: 15px;
-    font-weight: bold;
-    border-radius: 6px;
-}
-
-.cardButton:hover {
-    background: #A62321;
-}
-
-.statusDisplay {
-    padding: 10px;
-    background: rgb(207, 217, 228, 0.5);
-    color: black;
-}
-
-.distanceDisplay {
-    padding: 5px;
-    background: rgb(207, 217, 228, 0.25);
-    color: black;
-}
 
 /* =-=-=-=-= STATUS BOX =-=-=-=-= */
 /* hidden by default */
@@ -274,4 +272,59 @@ footer {
 
 .status-badge.status-badge-active {
     display: block;
+}
+
+/* =-=-=-=-= CARD 3 =-=-=-=-= */
+#distance-stats-card {
+    max-width: 100%;
+}
+
+.stats-tables-row {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    width: 100%;
+}
+
+.stats-table {
+    border-collapse: collapse;
+    flex: 1;
+    min-width: 340px;
+    background: #FFFFFF;
+}
+
+.stats-table th {
+    background-color: #E30613;
+    color: #FFFFFF;
+    padding: 8px 10px;
+    text-align: center;
+    border: 1px solid #FFFFFF;
+}
+
+.stats-table td {
+    padding: 6px 10px;
+    text-align: center;
+    border: 1px solid #dddddd;
+    font-size: 14px;
+}
+
+.stats-table tr.stats-stripe-a td {
+    background-color: #cfe8fb;
+}
+
+.stats-table tr.stats-stripe-b td {
+    background-color: #eaf6fd;
+}
+
+.stats-rowgroup {
+    background-color: #E30613 !important;
+    color: #fff;
+    font-weight: bold;
+    font-style: italic;
+}
+
+.stats-note {
+    color: #777;
+    font-size: 13px;
+    margin-top: 10px;
 }

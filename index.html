@@ -18,20 +18,22 @@
     <!-- =-=-=-=-= NAV BAR =-=-=-=-= -->
     <nav>
         <div class="nav-section">Sections: </div>
+
         <div class="nav-section">
-            <a href="index.html" class="nav-link active">Dashboard <img class="iconImage"
-                    src="assets/compassFavicon.png" alt="Red Compass Icon"></a>
+            <button class="cardButton" onclick="stopServer()">Stop Server</button>
         </div>
 
         <div class="nav-section">
-            <a href="index.html" class="nav-link">Placeholder 1 <img class="iconImage" src="assets/globeFavicon.png"
-                    alt="Red Globe Icon"></a>
+            <button class="cardButton" onclick="restartServer()">Restart Server</button>
         </div>
 
+        <!-- <img class="iconImage" src="assets/compassFavicon.png">
+        <img class="iconImage" src="assets/atlasFaviconWhite.png"> -->
+
         <div class="nav-section">
-            <a href="index.html" class="nav-link">Placeholder 2 <img class="iconImage" src="assets/atlasFavicon.png"
-                    alt="Red Atlas Icon"></a>
+            <button class="cardButton" type="button" onclick="location.reload()">Reload Dashboard</button>
         </div>
+
     </nav>
 
     <!-- =-=-=-=-= HEADER =-=-=-=-= -->
@@ -54,7 +56,7 @@
                 </div>
             </div>
 
-            <!-- Warning Box (only one badge is ever visible at a time)-->
+            <!-- =-=-=-=-= CARD 2 - Status Box =-=-=-=-= -->
             <div class="card">
                 <h1>Status</h1>
 
@@ -68,53 +70,28 @@
                 <div id="status-badge-alarm" class="status-badge" style="background-color: #EA324C">
                     <b>ALARM: SPOOFING DETECTED</b><br>(antenna overlap)
                 </div>
-                <div id="status-badge-error" class="status-badge" style="background-color: #A62321">
+                <div id="status-badge-error" class="status-badge" style="background-color: #A62321; color: aliceblue;">
                     <b>ERROR</b><br><span id="status-error-detail">(details)</span>
                 </div>
 
                 <p id="deviation-stats" class="deviationChartStats">Calculated Centre Mean: Fetching...</p>
 
-                <p>5000 ←→ 5001 = X m</p>
-                <p>5001 ←→ 5002 = X m</p>
-                <p>5002 ←→ 5000 = X m</p>
+                <div id="pairDistanceSummary" class="deviationChartStats">Loading distances between pairs...</div>
 
                 <img src="assets/spoofingDiagram.png"
                     alt="A diagram of GNSS spoofing taken from the paper GNSS_Time_Signal_Spoofing_Detector_for_Electrical_Substations"
-                    style="width: 100%;">
+                    style="width: 50%; align-items: center;">
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            <!-- =-=-=-=-= CARD 3 - Statistics =-=-=-=-= -->
+            <div class="card" id="distance-stats-card">
+                <h1>Position &amp; Distance Statistics</h1>
+                <div id="distanceStatsTables">Loading Statistics...</div>
             </div>
 
         </div>
-
-        <!-- <div class="dashboard-grid">
-
-            =-=-=-=-= CARD 2 =-=-=-=-=
-            <div class="card">
-                <h1>Spoofing Detector</h1>
-                <form id="gnss-form">
-                    <label for="ip1">IP Address 1:</label><br>
-                    <input type="text" id="ip1" value="143.117.216.46:5000"
-                        style="width: 100%; margin-bottom: 10px;"><br>
-
-                    <label for="ip2">IP Address 2</label><br>
-                    <input type="text" id="ip2" value="143.117.216.46.5001"
-                        style="width: 100%; margin-bottom: 10px;"><br>
-
-                    <label for="ip3">IP Address 3</label><br>
-                    <input type="text" id="ip3" value="143.117.216.46.5002"
-                        style="width: 100%; margin-bottom: 10px;"><br>
-
-                    <button class="cardButton" type="submit">Start Tracking</button>
-                </form>
-
-                <h3 style="margin-top: 20px;">System Status</h3>
-                <div id="status-display" class="statusDisplay">Waiting for input...</div>
-                <div id="distance12-display" class="distanceDisplay">Waiting for distance 1-2 result...</div>
-                <div id="distance13-display" class="distanceDisplay">Waiting for distance 1-3 result...</div>
-                <div id="distance23-display" class="distanceDisplay">Waiting for distance 2-3 result...</div>
-            </div>
-
-        </div> -->
-
     </div>
 
     <!-- =-=-=-=-= FOOTER =-=-=-=-= -->

@@ -31,6 +31,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     initChart();
     await loadInitialHistory(); // one-off fetch of everything recorded before this page loaded
     connectLiveStream(); // live push connection for everything after that
+
+    loadDistanceStats(); //variance table
+    setInterval(loadDistanceStats, DISTANCE_STATS_REFRESH_MS);
 })
 
 /* =-=-=-=-= DECORATE CHART =-=-=-=-= */
@@ -97,7 +100,7 @@ const circularGridPlugin = {
 // Fades a colour from light (old points) to full opacity (newest points)
 function fadeColor([r, g, b], index, total) {
     if (total <= 1) return `rgba(${r}, ${g}, ${b}, 1)`;
-    const minOpacity = 0.05; //opacity lily TODO it's here since I keep losing it
+    const minOpacity = 0.25; //opacity lily TODO it's here since I keep losing it
     const t = index / (total - 1); // 0 = oldest point, 1 = newest point
     const opacity = minOpacity + (1 - minOpacity) * t;
     return `rgba(${r}, ${g}, ${b}, ${opacity.toFixed(3)})`;
@@ -115,11 +118,11 @@ function ensureReceiver(receiverId) {
 
 /* =-=-=-=-= LAT/LON -> METRES CONVERSION CONSTANTS =-=-=-=-= */
 const METRES_PER_DEG_LAT = 111120;
-const METRES_PER_DEG_LON = 65315; // Assumes ~54°N latitude
+const METRES_PER_DEG_LON = 65315; // Assumes ~54°N latitude (make dynamic?)
 
 function computeSymmetricBounds(datasets) {
-    // floor of 6m that grows automatically if a point deviates further
-    let maxAbs = 6;
+    // floor of 1m that grows automatically if a point deviates further LILY TODO I MESSED WITH THIS IT USED TO BE 6
+    let maxAbs = 1;
     datasets.forEach(ds => {
         ds.data.forEach(pt => {
             maxAbs = Math.max(maxAbs, Math.abs(pt.x || 0), Math.abs(pt.y || 0));
@@ -183,10 +186,39 @@ function syncDatasetsFromReceivers() {
         };
     }).filter(Boolean);
 
-    deviationChart.data.datasets = datasets;
+    // Triangle marker to represent mean receiver position 
+    // (keeping it in a separate array and drawn last so it doesn't go under the other plots)
+    const averageMarkerDatasets = receiversArray.map(([receiverId, series]) => {
+        if (series.points.length === 0) return null;
+
+        const avgLat = series.points.reduce((acc, p) => acc + p.lat, 0) / series.points.length;
+        const avgLon = series.points.reduce((acc, p) => acc + p.lon, 0) / series.points.length;
+
+        return {
+            label: `${receiverId} (avg)`,
+            isAverageMarker: true,
+            showLine: false,
+            data: [{
+                x: (avgLon - globalCenter.lon) * METRES_PER_DEG_LON,
+                y: (avgLat - globalCenter.lat) * METRES_PER_DEG_LAT,
+                lat: avgLat,
+                lon: avgLon
+            }],
+            pointStyle: 'triangle',
+            rotation: 0,
+            pointRadius: 8,
+            pointHoverRadius: 10,
+            backgroundColor: `rgba(${series.color.join(', ')}, 1)`, // filled with the receiver's own colour
+            borderColor: '#000000', // black outline
+            borderWidth: 2,
+            order: -1 // lower order draws last so it always sits above the other datasets
+        };
+    }).filter(Boolean);
+
+    deviationChart.data.datasets = [...datasets, ...averageMarkerDatasets];
 
     // Calculate auto-bounds based on mapped x, y coordinates
-    const bound = computeSymmetricBounds(datasets);
+    const bound = computeSymmetricBounds([...datasets, ...averageMarkerDatasets]);
     deviationChart.options.scales.x.min = -bound;
     deviationChart.options.scales.x.max = bound;
     deviationChart.options.scales.y.min = -bound;
@@ -211,7 +243,7 @@ function initChart() {
                     display: false // Hide the default square grid lines and axis
                 },
                 y: {
-                    display: false // Hide the default square grid lines and axis
+                    display: false
                 }
             },
             plugins: {
@@ -220,17 +252,25 @@ function initChart() {
                     position: 'top',
                     labels: {
                         boxWidth: 12,
-                        color: '#2166a6' //TODO LILY fix colour
+                        color: '#2166a6',
+                        // keep average triangles out of legend
+                        filter: (legendItem, chartData) => !chartData.datasets[legendItem.datasetIndex]?.isAverageMarker
                     }
                 },
                 tooltip: {
                     callbacks: {
                         title: function (items) {
-                            return items.length ? `Receiver: ${items[0].dataset.label}` : '';
+                            if (!items.length) return '';
+                            const ds = items[0].dataset;
+                            return ds.isAverageMarker
+                                ? `${ds.label.replace(' (avg)', '')} \u2014 Average Position`
+                                : `Receiver: ${ds.label}`;
                         },
                         label: function (ctx) {
                             const pt = ctx.raw;
-                            return `Time: ${pt.time} | Lat: ${pt.y.toFixed(6)}, Lon: ${pt.x.toFixed(6)}`;
+                            return ctx.dataset.isAverageMarker
+                                ? `Mean Lat: ${pt.lat.toFixed(6)}\u00b0, Mean Lon: ${pt.lon.toFixed(6)}\u00b0`
+                                : `Time: ${pt.time} | Lat: ${pt.y.toFixed(6)}, Lon: ${pt.x.toFixed(6)}`;
                         }
                     }
                 }
@@ -239,12 +279,21 @@ function initChart() {
     });
 }
 
+// for the 'stop server' button in nav
+async function stopServer() {
+    if (confirm("Are you sure you want to stop the server?")) {
+        await fetch('/api/shutdown', { method: 'POST' });
+        document.body.innerHTML = "<h1>Server Has Been Shutdown</h1>";
+    }
+}
+
 /* =-=-=-=-= LOAD HISTORICAL RECEIVER DATA =-=-=-=-= */
-// runs once on ititial load but now also caps how many rows the server sends back and thins the data if there's too much history built up
-/* =-=-=-=-= LOAD HISTORICAL RECEIVER DATA =-=-=-=-= */
+// runs once on ititial load but now also caps how many rows the server sends back and 
+// thins the data if there's too much history built up
+
 async function loadInitialHistory() {
     try {
-        const response = await fetch('/api/logs/history?max_points=3000');
+        const response = await fetch('/api/logs/history?max_points=3000'); // todo Lily I changed this max points plots 
         const json = await response.json();
 
         if (json.data && json.data.length > 0) {
@@ -361,56 +410,153 @@ function updateMeanDisplay() {
     statsElem.innerHTML = outputLines.join('<br>');
 }
 
-/* =-=-=-=-= SEND IP ADDRESSES =-=-=-=-= */
-document.getElementById('gnss-form').addEventListener('submit', async function (e) {
-    e.preventDefault();
+/* =-=-=-=-= VARIANCE TABLE =-=-=-=-= */
+// see /api/logs/distance_stats on the server
+const DISTANCE_STATS_MAX_POINTS = 20000; // longer history cap independent of the live map's cap
+const DISTANCE_STATS_REFRESH_MS = 15000; // refreshes less often
 
-    const ip1 = document.getElementById('ip1').value;
-    const ip2 = document.getElementById('ip2').value;
-    const ip3 = document.getElementById('ip3').value;
-    const statusDisplay = document.getElementById('status-display');
-
-    const D12 = document.getElementById('distance12-display');
-    const D13 = document.getElementById('distance13-display');
-    const D23 = document.getElementById('distance23-display');
-
-    statusDisplay.innerText = "Connecting to streams..."
-    D12.innerText = "..."
-    D13.innerText = "..."
-    D23.innerText = "..."
-
-    // send data to fastapi server backend
+async function loadDistanceStats() {
     try {
-        const response = await fetch('/api/start_tracking', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ ip_1: ip1, ip_2: ip2, ip_3: ip3 })
-        });
-
-        const data = await response.json();
-        statusDisplay.innerText = "Tracking Active! Status: " + data.status;
-        D12.innerText = "Distance between antennas -> 1&2: " + data.distance12;
-        D13.innerText = "Distance between antennas -> 1&3: " + data.distance13;
-        D23.innerText = "Distance between antennas -> 2&3: " + data.distance23;
-
-        // reflects the detector's result in the same single-badge status display
-        if (data.status && data.status.startsWith("WARNING")) {
-            setSystemStatus('warning');
-        } else if (data.status && data.status.startsWith("NORMAL")) {
-            setSystemStatus('normal');
-        }
-
-    } catch (error) {
-        statusDisplay.innerText = "Error connecting to server.";
-        D12.innerText = ":("
-        D13.innerText = ":("
-        D23.innerText = ":("
-
-        setSystemStatus('error',
-            `[${new Date().toLocaleTimeString()}] Failed to reach /api/start_tracking.` +
-            `Check that serve.py is running and the IP addresses above are correct.`
-        );
+        const response = await fetch(`/api/logs/distance_stats?max_points=${DISTANCE_STATS_MAX_POINTS}`);
+        const json = await response.json();
+        renderPairDistanceSummary(json);
+        renderDistanceStatsTables(json);
+    } catch (err) {
+        console.error("Failed to load distance stats:", err);
     }
-});
+}
+
+function formatDeg(value) {
+    return value.toFixed(8);
+}
+
+function formatMetres(value) {
+    return value.toFixed(3);
+}
+
+// Fills in summary lines
+function renderPairDistanceSummary(json) {
+    const container = document.getElementById('pairDistanceSummary');
+    if (!container) return;
+
+    const pairKeys = Object.keys(json.pairs).sort();
+    if (pairKeys.length === 0) {
+        container.innerHTML = '<p>Waiting for data from two or more receivers...</p>';
+        return;
+    }
+
+    container.innerHTML = pairKeys.map(key => {
+        const pair = json.pairs[key];
+        const [a, b] = key.split('-');
+        return `<p>${a} \u2194 ${b} = ${formatMetres(pair.average.distance_m)} m avg ` +
+            `(min ${formatMetres(pair.min_distance.distance_m)} m / max ${formatMetres(pair.max_distance.distance_m)} m)</p>`;
+    }).join('');
+}
+
+// Builds the two full stats tables (per-port lat/lon, per-pair distance)
+function renderDistanceStatsTables(json) {
+    const container = document.getElementById('distanceStatsTables');
+    if (!container) return;
+
+    const receiverIds = Object.keys(json.receivers).sort(
+        (a, b) => json.receivers[a].port.localeCompare(json.receivers[b].port)
+    );
+
+    if (receiverIds.length === 0) {
+        container.innerHTML = '<p>No logged data yet.</p>';
+        return;
+    }
+
+    // Table 1: per-port lat/lon mean/upper/lower
+    let table1 = '<table class="stats-table"><thead><tr><th>Metric</th><th>Column</th>';
+    receiverIds.forEach(id => {
+        table1 += `<th>Port ${json.receivers[id].port}</th>`;
+    });
+    table1 += '</tr></thead><tbody>';
+
+    const positionGroups = [
+        { label: 'Mean', fields: [['Lat', 'avg_lat'], ['Lon', 'avg_lon']] },
+        { label: 'Upper (Max)', fields: [['Lat', 'max_lat'], ['Lon', 'max_lon']] },
+        { label: 'Lower (Min)', fields: [['Lat', 'min_lat'], ['Lon', 'min_lon']] },
+    ];
+
+    positionGroups.forEach((group, groupIdx) => {
+        const stripeClass = groupIdx % 2 === 0 ? 'stats-stripe-a' : 'stats-stripe-b';
+        group.fields.forEach(([label, field], idx) => {
+            table1 += `<tr class="${stripeClass}">`;
+            if (idx === 0) {
+                table1 += `<td class="stats-rowgroup" rowspan="2">${group.label}</td>`;
+            }
+            table1 += `<td>${label}</td>`;
+            receiverIds.forEach(id => {
+                table1 += `<td>${formatDeg(json.receivers[id][field])}</td>`;
+            });
+            table1 += '</tr>';
+        });
+    });
+    table1 += '</tbody></table>';
+
+    // Table 2: pairs distance stats
+    const pairKeys = Object.keys(json.pairs).sort();
+    let table2 = '<table class="stats-table"><thead><tr><th>Metric</th><th>Port Pair</th>' +
+        '<th>Lat Diff (deg)</th><th>Lon Diff (deg)</th><th>Distance (Metres)</th></tr></thead><tbody>';
+
+    const distanceGroups = [
+        { label: 'Average', key: 'average' },
+        { label: 'Largest Distance (Max)', key: 'max_distance' },
+        { label: 'Smallest Distance (Min)', key: 'min_distance' },
+    ];
+
+    distanceGroups.forEach((metric, groupIdx) => {
+        const stripeClass = groupIdx % 2 === 0 ? 'stats-stripe-a' : 'stats-stripe-b';
+        pairKeys.forEach((pairKey, idx) => {
+            const pair = json.pairs[pairKey][metric.key];
+            table2 += `<tr class="${stripeClass}">`;
+            if (idx === 0) {
+                table2 += `<td class="stats-rowgroup" rowspan="${pairKeys.length}">${metric.label}</td>`;
+            }
+            table2 += `<td>${pairKey}</td>`;
+            table2 += `<td>${pair.lat_diff.toExponential(5)}</td>`;
+            table2 += `<td>${pair.lon_diff.toExponential(5)}</td>`;
+            table2 += `<td>${formatMetres(pair.distance_m)}</td>`;
+            table2 += '</tr>';
+        });
+    });
+    table2 += '</tbody></table>';
+
+    const cappedNote = json.capped
+        ? `<p class="stats-note">Showing the most recent ${json.points_considered.toLocaleString()} of ${json.total_recorded.toLocaleString()} logged points.</p>`
+        : `<p class="stats-note">Based on all ${json.points_considered.toLocaleString()} logged points.</p>`;
+
+    container.innerHTML = `<div class="stats-tables-row">${table1}${table2}</div>${cappedNote}`;
+}
+
+// for the 'restart server' button to work
+async function restartServer() {
+    if (!confirm("Are you sure you want to restart the server?")) return;
+
+    try {
+        await fetch('/api/restart', { method: 'POST' });
+        document.body.innerHTML = "<h1>Server is restarting... Please wait.</h1>";
+
+        // Wait 3 seconds, then ping server every 2 seconds until it responds
+        setTimeout(() => {
+            const checkServer = setInterval(async () => {
+                try {
+                    const response = await fetch('/', { method: 'HEAD' });
+                    if (response.ok) {
+                        clearInterval(checkServer);
+                        location.reload();
+                    }
+                } catch (err) {
+                    // Server is still starting up...
+                }
+            }, 2000);
+        }, 3000);
+    } catch (err) {
+        alert("Failed to send restart signal to server.");
+    }
+}
+
+window.stopServer = stopServer;
+window.restartServer = restartServer; 
