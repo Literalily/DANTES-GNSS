@@ -5,8 +5,8 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GNSS Project</title>
-    <link rel="icon" type="image/x-icon" href="assets/globeFavicon.png">
+    <title>DANTES-GNSS</title>
+    <link rel="icon" type="image/x-icon" href="assets/atlasFavicon.png">
     <link rel="stylesheet" href="style/styles.css">
     <script type="module" src="js/script.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -15,42 +15,197 @@
 </head>
 
 <body>
+
     <!-- =-=-=-=-= NAV BAR =-=-=-=-= -->
     <nav>
-        <div class="nav-section">Sections: </div>
+        <div class="nav-section">Options: </div>
+
+        <div class="nav-section">
+            <button class="cardButton" command="show-modal" commandfor="contact-dialog">Setup Guide</button>
+        </div>
+        <img class="iconImage" src="assets/compassFavicon.png">
 
         <div class="nav-section">
             <button class="cardButton" onclick="stopServer()">Stop Server</button>
         </div>
-
-        <div class="nav-section">
-            <button class="cardButton" onclick="restartServer()">Restart Server</button>
-        </div>
-
-        <!-- <img class="iconImage" src="assets/compassFavicon.png">
-        <img class="iconImage" src="assets/atlasFaviconWhite.png"> -->
+        <img class="iconImage" src="assets/locationFavicon.png">
 
         <div class="nav-section">
             <button class="cardButton" type="button" onclick="location.reload()">Reload Dashboard</button>
         </div>
+        <img class="iconImage" src="assets/globeFavicon.png">
 
     </nav>
 
     <!-- =-=-=-=-= HEADER =-=-=-=-= -->
     <header>
-        <img class="headerImage" src="assets/Queens_White_Logo_Landscape.png" alt="White Compass Icon">
-        <div class="header-title">GNSS Project <span>Dashboard</span></div>
-        <div class="header-badge">Lily Crawford</div>
+        <!-- <img class="headerImage" src="assets/Queens_White_Logo_Landscape.png" alt="White Compass Icon"> -->
+        <img class="headerImage" src="assets/atlasFaviconWhite.png" alt="White Altas Icon">
+        <div class="header-title">DANTES-GNSS <span>Dashboard</span></div>
+        <div class="header-badge">Distributed Antenna Network for Timing & Error Surveillance</div>
     </header>
 
-    <!-- =-=-=-=-= PAGE =-=-=-=-= -->
+    <!-- =-=-=-=-= SETUP GUIDE (collapsed by default) =-=-=-=-= -->
     <div id="page-container">
+
+        <!-- setup gyide popup -->
+        <dialog id="contact-dialog">
+            <button command="close" commandfor="contact-dialog" aria-label="close modal">&times;</button>
+
+            <form>
+                <div id="setup-guide" class="card setup-card">
+                    <h3>DANTES-GNSS : Setup Guide</h3>
+
+                    <div class="setup-body">
+
+                        <h2>Physical layout</h2>
+                        <p>This system works with three sky-facing antennas in a straight line, each ~0.28m apart,
+                            connected to receivers reachable on
+                            ports <code>5001</code> - <code>5000</code> - <code>5002</code> (left to right).
+                            <br>The <b>middle receiver</b> <code>(5000)</code> is used as the common RTK base for both
+                            baselines.
+                        </p>
+
+                        <h2>Step 1. Install RTKLIB</h2>
+                        <p>Download RTKLIB from <a href="https://rtkexplorer.com/downloads/rtklib-code/" target="_blank"
+                                rel="noopener">rtkexplorer.com</a>
+                            (or the <a href="https://github.com/tomojitakasu/RTKLIB" target="_blank"
+                                rel="noopener">GitHub repo</a>). The system requires <code>RTKNAVI.exe</code>, and
+                            <code>STRSVR.exe</code> to communicate with the receivers.
+                        </p>
+
+                        <h2>Step 2. Launch STRSVR</h2>
+                        <p>open STRSVR and configure:</p>
+
+                        <table class="stats-table setup-table">
+                            <thead>
+                                <tr>
+                                    <th>Setting</th>
+                                    <th>(0) Input</th>
+                                    <th>(1) Output</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Type</td>
+                                    <td>TCP Client</td>
+                                    <td>TCP Server</td>
+                                </tr>
+                                <tr>
+                                    <td>Server Address</td>
+                                    <td>143.117.216.46</td>
+                                    <td>5000</td>
+                                </tr>
+                                <tr>
+                                    <td>Port</td>
+                                    <td> - - - </td>
+                                    <td>6000</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <p>Example STRSVR Setup: </p>
+                        <img src="assets/STRSVR setup.png" alt="Setup of STRSVR"
+                            style="width: 30%; align-items: center; justify-content: center;">
+
+
+                        <!-- ========== -->
+
+                        <p class="setup-note">As port 5000 can only accept one client connection at a time, run STRSVR
+                            first:
+                            input = TCP Client to port 5000, output = TCP Server on a new local port (e.g. 6000), then
+                            point
+                            both RTKNAVI base inputs at that port instead of 5000 directly.</p>
+
+
+                        <h2>Step 3. Launch two RTKNAVI instances</h2>
+                        <p>Each instance computes one baseline. Open RTKNAVI twice and configure:</p>
+
+                        <table class="stats-table setup-table">
+                            <thead>
+                                <tr>
+                                    <th>Setting</th>
+                                    <th>Instance A</th>
+                                    <th>Instance B</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Rover input (Stream 1)</td>
+                                    <td>TCP Client &rarr; port 5001</td>
+                                    <td>TCP Client &rarr; port 5002</td>
+                                </tr>
+                                <tr>
+                                    <td>Base input (Stream 2)</td>
+                                    <td>TCP Client &rarr; port 5000</td>
+                                    <td>TCP Client &rarr; port 5000</td>
+                                </tr>
+                                <tr>
+                                    <td>Solution 1 output</td>
+                                    <td>TCP Server, port 6001</td>
+                                    <td>TCP Server, port 6002</td>
+                                </tr>
+                                <tr>
+                                    <td>Solution format</td>
+                                    <td>E/N/U-Baseline</td>
+                                    <td>E/N/U-Baseline</td>
+                                </tr>
+                                <tr>
+                                    <td>Positioning mode</td>
+                                    <td>Kinematic</td>
+                                    <td>Kinematic</td>
+                                </tr>
+                                <tr>
+                                    <td>Ambiguity resolution</td>
+                                    <td>Fix and Hold</td>
+                                    <td>Fix and Hold</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <p class="setup-note">The Solution 1 output ports (6001 / 6002) must match the
+                            <code>BASELINES</code>
+                            list at the top of <code>server.py</code> - change one side or the other if you use
+                            different ports.
+                        </p>
+                        <p>Example RTKNAVI instance A Setup: </p>
+                        <img src="assets/RTKNAVI instance A setup.png" alt="Setup of RTKNAVI instance A"
+                            style="width: 30%; align-items: center; justify-content: center;">
+
+                        <p>Example RTKNAVI instance A Setup: </p>
+                        <img src="assets/RTKNAVI instance B setup.png" alt="Setup of RTKNAVI instance B"
+                            style="width: 30%; align-items: center; justify-content: center;">
+
+
+                        <h2>Step 3. Start the dashboard</h2>
+                        <p>Run <code>launch.bat</code>. It sets up the Python virtual environment, installs
+                            <code>requirements.txt</code>, and starts <code>server.py</code>, which connects to both
+                            RTKNAVI solution ports and opens this dashboard automatically.
+                        </p>
+
+                        <h2>Final Results</h2>
+                        <p>Once RTKNAVI achieves a fixed solution (Q=1) on both instances, the status badge should read
+                            <b>NORMAL</b> and both baseline distances on this dashboard should settle close to
+                            <b>0.28m</b>. A sustained deviation beyond tolerance, especially without a corresponding
+                            drop in fix quality, is the signature this system is designed to flag as an <b>ALARM</b>.
+                        </p>
+
+                    </div>
+                </div>
+
+                <div class="actions-btn">
+                    <button type="close" commandfor="contact-dialog">Close</button>
+                </div>
+            </form>
+        </dialog>
+
+
 
         <div class="dashboard-grid map-row">
 
             <!-- =-=-=-=-= CARD 1 - Deviation Map =-=-=-=-= -->
             <div class="card card-map">
-                <h1>Position Deviation Map</h1>
+                <h1>RTK Baseline Map</h1>
+                <div id="baseline-live-readout" class="deviationChartStats">Waiting for live solution...</div>
                 <div class="deviationChartBox">
                     <canvas id="deviationChart"></canvas>
                 </div>
@@ -62,21 +217,19 @@
 
                 <div id="status-badge-normal" class="status-badge status-badge-active"
                     style="background-color: #00b38a">
-                    <b>NORMAL</b><br>(separate geofences)
+                    <b>NORMAL</b><br>(baselines within tolerance)
                 </div>
                 <div id="status-badge-warning" class="status-badge" style="background-color: #F2AC42">
-                    <b>WARNING</b><br>(point leaves geofence)
+                    <b>WARNING</b><br>(baseline drifting / no fix)
                 </div>
                 <div id="status-badge-alarm" class="status-badge" style="background-color: #EA324C">
-                    <b>ALARM: SPOOFING DETECTED</b><br>(antenna overlap)
+                    <b>ALARM: SPOOFING SUSPECTED</b><br>(baseline distance out of tolerance)
                 </div>
                 <div id="status-badge-error" class="status-badge" style="background-color: #A62321; color: aliceblue;">
                     <b>ERROR</b><br><span id="status-error-detail">(details)</span>
                 </div>
 
-                <p id="deviation-stats" class="deviationChartStats">Calculated Centre Mean: Fetching...</p>
-
-                <div id="pairDistanceSummary" class="deviationChartStats">Loading distances between pairs...</div>
+                <div id="pairDistanceSummary" class="deviationChartStats">Loading distances between baselines...</div>
 
                 <img src="assets/spoofingDiagram.png"
                     alt="A diagram of GNSS spoofing taken from the paper GNSS_Time_Signal_Spoofing_Detector_for_Electrical_Substations"
@@ -87,7 +240,7 @@
         <div class="dashboard-grid">
             <!-- =-=-=-=-= CARD 3 - Statistics =-=-=-=-= -->
             <div class="card" id="distance-stats-card">
-                <h1>Position &amp; Distance Statistics</h1>
+                <h1>RTK Baseline Distance Statistics</h1>
                 <div id="distanceStatsTables">Loading Statistics...</div>
             </div>
 

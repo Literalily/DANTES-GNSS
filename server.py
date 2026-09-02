@@ -3,12 +3,9 @@ from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
-from pyubx2 import UBXReader, UBX_PROTOCOL, NMEA_PROTOCOL
 from collections import deque
 import math
 import os
-import sys
 import time
 import datetime
 import socket
@@ -29,16 +26,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# convert lat/lon into meters (also assumes 54o in case I want to make it dynamic later - TODO lily)
-METRES_PER_DEG_LAT = 111120
-METRES_PER_DEG_LON = 65315
-
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-print(f"[DEBUG] script_dir = {script_dir}")
-print(f"[DEBUG] style folder exists: {os.path.exists(os.path.join(script_dir, 'style'))}")
-
-LOGS_DIR = os.path.join(script_dir, "logs") #LOGS_DIR is where the historical data is held
+LOGS_DIR = os.path.join(script_dir, "logs")  # LOGS_DIR is where the historical data is held
 os.makedirs(LOGS_DIR, exist_ok=True)
 
 # Mount static asset folders safely
@@ -48,29 +38,21 @@ for folder in ["style", "js", "assets"]:
         app.mount(f"/{folder}", StaticFiles(directory=target), name=folder)
 
 # =-=-=-=-= THREADING AND QUEUE =-=-=-=-=
-gnss_queue = queue.Queue()
+solution_queue = queue.Queue()
 live_data_buffer = []
 buffer_lock = threading.Lock()
 
 # =-=-=-=-= SSE (SERVER-SENT EVENTS) SUBSCRIBERS =-=-=-=-=
-# Instead of the browser polling every second, each connected browser tab gets
-# its own asyncio.Queue here. The background worker thread pushes new points
-# into every subscriber's queue as soon as they're parsed, and the /api/logs/stream
-# endpoint streams them straight out over one long-lived HTTP connection.
 sse_subscribers = []
 sse_subscribers_lock = threading.Lock()
-main_event_loop = None  # set on FastAPI startup; needed to safely hand data from the worker thread to asyncio
-
+main_event_loop = None 
 
 @app.on_event("startup")
 async def capture_event_loop():
     global main_event_loop
     main_event_loop = asyncio.get_running_loop()
 
-
 def broadcast_to_subscribers(item):
-    # Called from the background worker thread (not async), so we use
-    # call_soon_threadsafe to safely wake up each subscriber's asyncio queue.
     if main_event_loop is None:
         return
     with sse_subscribers_lock:
@@ -78,238 +60,224 @@ def broadcast_to_subscribers(item):
     for subscriber_queue in subscribers:
         main_event_loop.call_soon_threadsafe(subscriber_queue.put_nowait, item)
 
-# GNSS receiver configuration to track multiple receivers at once
-# every point recorded is tagged with the "host:port" it came from so the dashboard can tell the receivers apart
-RECEIVERS = [
-    {"host": "143.117.216.46", "port": 5002},
-    {"host": "143.117.216.46", "port": 5001},
-    {"host": "143.117.216.46", "port": 5000}
+# =-=-=-=-= BASELINE CONFIGURATION =-=-=-=-=
+# Each baseline entry corralates to a unique RTKNAVI instance output stream.
+# In format E/N/U Baseline (switched from lat/lon/alt becuase it works just as well without difficult backend calculations).
+# this reads the text solution lines it prints.
+# port 5001 -- 0.28m -- port 5000 -- 0.28m -- port 5002 
+# 5000 (the middle antenna) is used as the common RTK base for both baselines.
+BASELINES = [
+    {
+        "name": "5000-5001",          # base 5000, rover 5001
+        "host": "127.0.0.1",
+        "port": 6001,                 # RTKNAVI instance A's Solution 1 output port
+        "nominal_distance_m": 0.28,
+        "warning_tolerance_m": 0.03,  # if it deviates more than 3cm either way, change status badge to WARNING
+        "alarm_tolerance_m": 0.08,    # if it deviates more than 8cm either way, change status badge to ALARM (spoofing suspected)
+    },
+    {
+        "name": "5000-5002",          # base 5000, rover 5002
+        "host": "127.0.0.1",
+        "port": 6002,                 # RTKNAVI instance B's Solution 1 output port
+        "nominal_distance_m": 0.28,
+        "warning_tolerance_m": 0.03,
+        "alarm_tolerance_m": 0.08,
+    },
 ]
- 
-# System and Connection Status Tracking - one entry per receiver
+
 connection_status = {
-    f"{r['host']}:{r['port']}": {
+    b["name"]: {
         "is_connected": False,
         "error_message": None,
-        "last_packet_time": 0
+        "last_packet_time": 0,
     }
-    for r in RECEIVERS
+    for b in BASELINES
 }
 
-# =-=-=-=-= PARSE RECEIVER DATA =-=-=-=-=
-# Parses pyubx2 objects (UBX or NMEA) into a unified dictionary format
-def parse_ubx_data(raw_data, receiver_id):
-    identity = getattr(raw_data, "identity", "")
 
-    # trying to parse if it's in UBX Binary NAV-PVT
-    if identity == "NAV-PVT":
-        try:
-            hour = getattr(raw_data, "hour", 0)
-            minute = getattr(raw_data, "min", 0)
-            sec = getattr(raw_data, "sec", 0)
-            year = getattr(raw_data, "year", None)
-            month = getattr(raw_data, "month", None)
-            day = getattr(raw_data, "day", None)
+# =-=-=-=-= PARSE RTKLIB SOLUTION LINES =-=-=-=-=
+# RTKNAVI's "E/N/U-Baseline" solution stream looks like: date time e n u Q ns sde sdn sdu (sdeu, sdun, sdue, age, ratio)
+# e.g. 2026/09/02 14:03:11.00   0.264   -0.085   0.0012   1   9 (only the first 7 are important)
 
-            if year and year > 2000 and month and day:
-                date_str = f"{year:04d}-{month:02d}-{day:02d}"
-            else:
-                date_str = datetime.date.today().strftime("%Y-%m-%d")
+def parse_rtklib_solution_line(line, baseline_name):
+    line = line.strip()
+    if not line or line.startswith("%"):
+        return None  #header line
 
-            datetime_str = f"{date_str} {hour:02d}:{minute:02d}:{sec:02d}"
+    parts = line.split()
+    if len(parts) < 7:
+        return None  # if it's an incomplete line, eg. a partial read, skip it
 
-            lat = raw_data.lat
-            lon = raw_data.lon
-            # alt = raw_data.height #TODO LILY DELETE
-            alt = round(getattr(raw_data, "hMSL", 0) / 1000.0, 2)
+    try:
+        date_str, time_str = parts[0], parts[1]
+        e = float(parts[2])
+        n = float(parts[3])
+        u = float(parts[4])
+        quality = int(parts[5])
+        num_sats = int(parts[6])
+    except ValueError:
+        return None  # if it's a corrupted/partial line, skip don't crash the reader thread over this
 
-            return {
-                "time": datetime_str, 
-                "latitude": round(lat, 7),
-                "longitude": round(lon, 7),
-                "altitude": alt,
-                "receiver": receiver_id
-            }
-        except AttributeError:
-            return None
+    distance_m = math.sqrt(e * e + n * n + u * u)
 
-    # trying to parse if it's in UBX Binary NAV-POSLLH
-    elif identity == "NAV-POSLLH":
-        try:
-            date_str = datetime.date.today().strftime("%Y-%m-%d")
-            itow = getattr(raw_data, "iTOW", 0)
-            lat = raw_data.lat
-            lon = raw_data.lon
-            alt = round(raw_data.hMSL / 1000.0, 2) if hasattr(raw_data, "hMSL") else 0.0
+    return {
+        "time": f"{date_str} {time_str}",
+        "baseline": baseline_name,
+        "e": round(e, 4),
+        "n": round(n, 4),
+        "u": round(u, 4),
+        "distance_m": round(distance_m, 4),
+        "q": quality,     # 1=fix, 2=float, 3=sbas, 4=dgps, 5=single, 6=ppp, 0=no solution
+        "ns": num_sats,
+    }
 
-            return {
-                "time": f"{date_str} (iTOW:{itow})",
-                "latitude": round(lat, 7),
-                "longitude": round(lon, 7),
-                "altitude": alt,
-                "receiver": receiver_id
-            }
-        except AttributeError:
-            return None
 
-    # fallback if NMEA Sentences (GGA / RMC)
-    elif "GGA" in identity or "RMC" in identity:
-        try:
-            lat = getattr(raw_data, "lat", None)
-            lon = getattr(raw_data, "lon", None)
-            if lat is None or lon is None or lat == "" or lon == "": # Skip invalid or empty fixes
-                return None
+def classify_status(baseline_cfg, parsed_point):
+    # compare calulated distance between ports to expected physical distance
+    if parsed_point["q"] not in (1, 2):
+        return "warning"  # no usable fix yet (not necessarily a spoof, but not trustworthy either)
 
-            time_val = getattr(raw_data, "time", "00:00:00")
-            date_str = datetime.date.today().strftime("%Y-%m-%d")
-            datetime_str = f"{date_str} {time_val}"
-            alt_val = getattr(raw_data, "alt", 0.0)
+    deviation = abs(parsed_point["distance_m"] - baseline_cfg["nominal_distance_m"])
+    if deviation > baseline_cfg["alarm_tolerance_m"]:
+        return "alarm" #if deviation significantly larger than expected, set status to spoofing alarm
+    if deviation > baseline_cfg["warning_tolerance_m"]:
+        return "warning" #if deviation slightly larger than expected, set status to spoofing alarm
+    return "normal" #if all okay, normal
 
-            return {
-                "time": datetime_str,
-                "latitude": round(float(lat), 7),
-                "longitude": round(float(lon), 7),
-                "altitude": round(float(alt_val), 2),
-                "receiver": receiver_id
-            }
-        except (AttributeError, ValueError):
-            return None
 
-    # Ignore satellite/DOP metadata
-    return None
+# =-=-=-=-= THREAD: RTKNAVI SOLUTION STREAM READER (one per baseline) =-=-=-=-=
+def baseline_socket_thread(baseline_cfg):
+    name = baseline_cfg["name"]
+    host, port = baseline_cfg["host"], baseline_cfg["port"]
 
-# =-=-=-=-= THREAD 1: RECEIVER STREAM READER =-=-=-=-=
-def gnss_socket_thread(host: str, port: int):
-    receiver_id = f"{host}:{port}"
-    print(f"[{receiver_id}] Socket Worker Started. Connecting...")
- 
+    print(f"[{name}] Socket worker started. Connecting to RTKNAVI solution port {host}:{port} ...")
+
     while True:
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(10.0)  # Set 10-second socket read timeout
+            sock.settimeout(5.0)
             sock.connect((host, port))
- 
-            connection_status[receiver_id]["is_connected"] = True
-            connection_status[receiver_id]["error_message"] = None
 
-            print(f"[{receiver_id}] Successfully connected.")
- 
-            stream = sock.makefile('rb')
-            ubr = UBXReader(stream, protfilter=UBX_PROTOCOL | NMEA_PROTOCOL) # Enable both UBX and NMEA protocol parsing
- 
-            packets_in_session = 0
+            connection_status[name]["is_connected"] = True
+            connection_status[name]["error_message"] = None
+            print(f"[{name}] Connected to RTKNAVI solution stream.")
+
+            stream = sock.makefile("r")  # text mode since RTKLIB solution output is ASCII
+            lines_in_session = 0
             session_start = time.time()
- 
-            for (raw_bytes, parsed_data) in ubr:
-                if parsed_data:
-                    parsed_point = parse_ubx_data(parsed_data, receiver_id)
-                    if parsed_point:
-                        packets_in_session += 1
-                        connection_status[receiver_id]["last_packet_time"] = time.time()
-                        connection_status[receiver_id]["error_message"] = None
-                        gnss_queue.put(parsed_point)
 
-                # Timeout check: If connected for 10 seconds without receiving position data
-                if packets_in_session == 0 and (time.time() - session_start) > 10.0:
-                    raise TimeoutError("Socket connected but no GNSS data packets received.")
- 
+            for line in stream:
+                parsed = parse_rtklib_solution_line(line, name)
+                if parsed:
+                    lines_in_session += 1
+                    connection_status[name]["last_packet_time"] = time.time()
+                    connection_status[name]["error_message"] = None
+                    parsed["status"] = classify_status(baseline_cfg, parsed)
+                    parsed["nominal_distance_m"] = baseline_cfg["nominal_distance_m"]
+                    solution_queue.put(parsed)
+
+                if lines_in_session == 0 and (time.time() - session_start) > 5.0:
+                    raise TimeoutError("Connected to RTKNAVI but no solution lines received in 5s.")
+
         except (socket.timeout, TimeoutError, ConnectionRefusedError, OSError) as e:
             err_msg = (
-                f"[CRITICAL ERROR] Receiver port blocked or unavailable ({receiver_id}). "
-                f"Another application (e.g., u-Center) may be open and locking the receiver port."
+                f"[CRITICAL ERROR] Could not reach RTKNAVI solution stream for baseline {name} "
+                f"({host}:{port}). Please check your setup by clicking 'Setup Guide'. "
+                f"Likely to be: 1) RTKNAVI instance not running, or "
+                f"2) Solution 1 output not set to 'TCP Server' on this port."
             )
             print(f"\n{'='*80}\n{err_msg}\n{'='*80}\n")
- 
-            connection_status[receiver_id]["is_connected"] = False
-            connection_status[receiver_id]["error_message"] = (
-                f"CRITICAL ERROR: Unable to access receiver at {receiver_id}. "
-                f"u-Center or another program is open and locking the connection port."
-            )
- 
+            connection_status[name]["is_connected"] = False
+            connection_status[name]["error_message"] = err_msg
+
         except Exception as e:
-            print(f"[{receiver_id} WARNING] Connection error: {e}")
- 
+            print(f"[{name} WARNING] Connection error: {e}")
+
         finally:
             try:
                 sock.close()
-            except:
+            except Exception:
                 pass
- 
-        # sleep 10 seconds between retries to avoid cmd spam
-        time.sleep(10)
+
+        time.sleep(5)  # retry pause
 
 
-# =-=-=-=-= THREAD 2: DATA PROCESSOR & LOGGING =-=-=-=-=
-# 1. pulls coordinates off the queue
-# 2. prints the debug information (latitude, longitude, altitude, time, receiver)
-# 3. appends records to a single master file
+# =-=-=-=-= THREAD: DATA PROCESSOR & LOGGING =-=-=-=-=
+# 1. pulls parsed solutions off the queue
+# 2. appends them to a single master CSV log (one row per epoch per baseline)
+# 3. keeps a live buffer and pushes to connected dashboard over SSE
 def data_processor_thread():
-    print("[THREAD 2] Consumer Processor Started.")
-    master_log_filepath = os.path.join(LOGS_DIR, "gnss_master_log.csv")
+    print("[LOGGER] Consumer processor started.")
+    master_log_filepath = os.path.join(LOGS_DIR, "baseline_master_log.csv")
 
     while True:
         try:
-            item = gnss_queue.get(timeout=1.0) #block until data is avaliable in the queue
-            
-            file_exists = os.path.exists(master_log_filepath)  # Append to single master log csv file
+            item = solution_queue.get(timeout=1.0)
+
+            file_exists = os.path.exists(master_log_filepath)
             with open(master_log_filepath, "a") as f:
                 if not file_exists:
-                    f.write("datetime,latitude,longitude,altitude,receiver\n")
-                f.write(f"{item['time']},{item['latitude']},{item['longitude']},{item['altitude']},{item['receiver']}\n")
+                    f.write("datetime,baseline,e,n,u,distance_m,nominal_distance_m,q,ns,status\n")
+                f.write(
+                    f"{item['time']},{item['baseline']},{item['e']},{item['n']},{item['u']},"
+                    f"{item['distance_m']},{item['nominal_distance_m']},{item['q']},{item['ns']},{item['status']}\n"
+                )
 
-            # Store in live buffer for updating the dashboard ui live
             with buffer_lock:
-                item['id'] = len(live_data_buffer)
+                item["id"] = len(live_data_buffer)
                 live_data_buffer.append(item)
-                
-            # Push straight to browser instead of waiting for it to poll
-            broadcast_to_subscribers(item)
 
-            gnss_queue.task_done()
-            print(f"[SUCCESS] Saved -> Datetime: {item['time']} | Lat: {item['latitude']} | Lon: {item['longitude']} | Alt: {item['altitude']}m | Receiver: {item['receiver']}")
+            broadcast_to_subscribers(item) #put onto dashboard
+
+            solution_queue.task_done()
+            print(
+                f"[SUCCESS] {item['time']} | {item['baseline']} | "
+                f"dist={item['distance_m']}m (nominal {item['nominal_distance_m']}m) | "
+                f"Q={item['q']} ns={item['ns']} | {item['status'].upper()}"
+            )
 
         except queue.Empty:
             continue
         except Exception as e:
-            print(f"[ERROR] Failed to save or process frame: {e}")
+            print(f"[ERROR] Failed to save or process solution: {e}")
 
 
-class IPConfig(BaseModel):
-    ip_1: str
-    ip_2: str
-    ip_3: str
-
-
-# Start one background receiver thread per configured receiver, plus the logger
-for r in RECEIVERS:
-    threading.Thread(target=gnss_socket_thread, args=(r["host"], r["port"]), daemon=True).start()
+# Start one background reader thread per configured baseline, plus the logger
+for baseline_cfg in BASELINES:
+    threading.Thread(target=baseline_socket_thread, args=(baseline_cfg,), daemon=True).start()
 threading.Thread(target=data_processor_thread, daemon=True).start()
 
 
 # =-=-=-=-= APIs =-=-=-=-=
 @app.get("/api/logs/history")
 def get_historical_logs(max_points: int = 3000):
-    # Scans ./logs folder and loads all historical points on launch.
-    # If there are more rows than max_points, the data is evenly thinned
-    # out (always keeping the most recent point) so the chart stays fast
-    # and readable instead of trying to plot every single raw sample
+    # Scans ./logs folder and loads all historical points on launch (skips malformed lines if server crashes mid-write)
     historical_points = []
-    log_files = sorted([f for f in os.listdir(LOGS_DIR) if f.endswith('.csv')])
+    log_files = sorted([f for f in os.listdir(LOGS_DIR) if f.endswith(".csv")])
     for log_file in log_files:
         filepath = os.path.join(LOGS_DIR, log_file)
-        with open(filepath, 'r') as f:
+        with open(filepath, "r") as f:
             lines = f.readlines()[1:]
             for line in lines:
-                parts = line.strip().split(',')
-                if len(parts) == 5:
+                parts = line.strip().split(",")
+                if len(parts) != 10:
+                    continue
+                try:
                     historical_points.append({
                         "time": parts[0],
-                        "latitude": float(parts[1]),
-                        "longitude": float(parts[2]),
-                        "altitude": float(parts[3]),
-                        "receiver": parts[4]
+                        "baseline": parts[1],
+                        "e": float(parts[2]),
+                        "n": float(parts[3]),
+                        "u": float(parts[4]),
+                        "distance_m": float(parts[5]),
+                        "nominal_distance_m": float(parts[6]),
+                        "q": int(parts[7]),
+                        "ns": int(parts[8]),
+                        "status": parts[9],
                     })
- 
+                except ValueError:
+                    continue  # malformed row - skip rather than 500
+
     total = len(historical_points)
     if total > max_points:
         step = math.ceil(total / max_points)
@@ -317,133 +285,75 @@ def get_historical_logs(max_points: int = 3000):
         if historical_points and thinned[-1] is not historical_points[-1]:
             thinned.append(historical_points[-1])  # always keep the most recent point
         historical_points = thinned
- 
+
     return JSONResponse(content={"count": len(historical_points), "total_recorded": total, "data": historical_points})
- 
+
 
 @app.get("/api/logs/distance_stats")
 def get_distance_stats(max_points: int = 20000):
-    # v similar to /api/logs/history but for the table instead of the chart
-    # has a larger cap and reads from tail
     points = []
-    log_files = sorted([f for f in os.listdir(LOGS_DIR) if f.endswith('.csv')])
+    log_files = sorted([f for f in os.listdir(LOGS_DIR) if f.endswith(".csv")])
     total_recorded = 0
     for log_file in log_files:
         filepath = os.path.join(LOGS_DIR, log_file)
-        with open(filepath, 'r') as f:
+        with open(filepath, "r") as f:
             next(f, None)  # skip header
             tail_lines = deque(f, maxlen=max_points)
         for line in tail_lines:
             total_recorded += 1
-            parts = line.strip().split(',')
-            if len(parts) == 5:
-                try:
-                    points.append({
-                        "latitude": float(parts[1]),
-                        "longitude": float(parts[2]),
-                        "receiver": parts[4]
-                    })
-                except ValueError:
-                    continue
- 
+            parts = line.strip().split(",")
+            if len(parts) != 10:
+                continue
+            try:
+                points.append({
+                    "baseline": parts[1],
+                    "e": float(parts[2]),
+                    "n": float(parts[3]),
+                    "u": float(parts[4]),
+                    "distance_m": float(parts[5]),
+                    "nominal_distance_m": float(parts[6]),
+                    "q": int(parts[7]),
+                })
+            except ValueError:
+                continue
+
     capped = total_recorded >= max_points
     if len(points) > max_points:
         points = points[-max_points:]
- 
-    # Group points per receiver, in chronological order
-    by_receiver = {}
+
+    by_baseline = {}
     for pt in points:
-        by_receiver.setdefault(pt["receiver"], []).append(pt)
- 
-    # --- Per-receiver lat/lon stats (mean / max / min) ---
-    receiver_stats = {}
-    for receiver_id, pts in by_receiver.items():
-        lats = [p["latitude"] for p in pts]
-        lons = [p["longitude"] for p in pts]
-        receiver_stats[receiver_id] = {
-            "port": receiver_id.split(":")[-1],
+        by_baseline.setdefault(pt["baseline"], []).append(pt)
+
+    baseline_stats = {}
+    for name, pts in by_baseline.items():
+        distances = [p["distance_m"] for p in pts]
+        es = [p["e"] for p in pts]
+        ns = [p["n"] for p in pts]
+        us = [p["u"] for p in pts]
+        fixed_count = sum(1 for p in pts if p["q"] == 1)
+        baseline_stats[name] = {
             "count": len(pts),
-            "avg_lat": sum(lats) / len(lats),
-            "avg_lon": sum(lons) / len(lons),
-            "max_lat": max(lats),
-            "max_lon": max(lons),
-            "min_lat": min(lats),
-            "min_lon": min(lons),
+            "nominal_distance_m": pts[-1]["nominal_distance_m"],
+            "avg_distance_m": sum(distances) / len(distances),
+            "max_distance_m": max(distances),
+            "min_distance_m": min(distances),
+            "avg_e": sum(es) / len(es),
+            "avg_n": sum(ns) / len(ns),
+            "avg_u": sum(us) / len(us),
+            "fix_rate_pct": round(100 * fixed_count / len(pts), 1),
         }
- 
-    # receivers log independently, so pairing is done by matching
-    # each receiver's Nth-most-recent reading to the other's Nth-most-recent
-    # reading (not by exact timestamp). Good enough to characterise how far
-    # apart reported positions drift, but not a simultaneous fix-to-fix
-    # distance if receivers are logging at different rates.
-    receiver_ids = list(by_receiver.keys())
-    pair_stats = {}
-    for i in range(len(receiver_ids)):
-        for j in range(i + 1, len(receiver_ids)):
-            id_a, id_b = receiver_ids[i], receiver_ids[j]
-            pts_a, pts_b = by_receiver[id_a][::-1], by_receiver[id_b][::-1]  # align from most-recent backwards
-            n = min(len(pts_a), len(pts_b))
-            if n == 0:
-                continue
- 
-            lat_diffs, lon_diffs, distances = [], [], []
-            for k in range(n):
-                lat_diff = pts_a[k]["latitude"] - pts_b[k]["latitude"]
-                lon_diff = pts_a[k]["longitude"] - pts_b[k]["longitude"]
-                dy = lat_diff * METRES_PER_DEG_LAT
-                dx = lon_diff * METRES_PER_DEG_LON
-                distances.append(math.sqrt(dx * dx + dy * dy))
-                lat_diffs.append(lat_diff)
-                lon_diffs.append(lon_diff)
- 
-            max_idx = distances.index(max(distances))
-            min_idx = distances.index(min(distances))
- 
-            pair_key = f"{id_a.split(':')[-1]}-{id_b.split(':')[-1]}"
-            pair_stats[pair_key] = {
-                "n_points_compared": n,
-                "average": {
-                    "lat_diff": sum(lat_diffs) / n,
-                    "lon_diff": sum(lon_diffs) / n,
-                    "distance_m": sum(distances) / n,
-                },
-                "max_distance": {
-                    "lat_diff": lat_diffs[max_idx],
-                    "lon_diff": lon_diffs[max_idx],
-                    "distance_m": distances[max_idx],
-                },
-                "min_distance": {
-                    "lat_diff": lat_diffs[min_idx],
-                    "lon_diff": lon_diffs[min_idx],
-                    "distance_m": distances[min_idx],
-                },
-            }
- 
+
     return JSONResponse(content={
         "total_recorded": total_recorded,
         "points_considered": len(points),
         "capped": capped,
-        "receivers": receiver_stats,
-        "pairs": pair_stats
+        "baselines": baseline_stats,
     })
 
-@app.get("/api/logs/live")
-#Fetches ONLY new data points recorded since the given index
-def get_live_updates(since: int = 0):
-    with buffer_lock:
-        new_points = live_data_buffer[since:]
-        next_id = len(live_data_buffer)
-        
-    return JSONResponse(content={
-        "next_index": next_id, 
-        "data": new_points,
-        # "connection_error": connection_status["error_message"]
-        "connection_status": connection_status
-    })
-    
+
 @app.get("/api/logs/stream")
 async def stream_logs(request: Request):
-    # Each browser tab gets its own queue registered above; the worker thread pushes into it via broadcast_to_subscribers() whenever a new point is parsed.
     client_queue = asyncio.Queue()
     with sse_subscribers_lock:
         sse_subscribers.append(client_queue)
@@ -454,7 +364,7 @@ async def stream_logs(request: Request):
                 if await request.is_disconnected():
                     break
                 try:
-                    item = await asyncio.wait_for(client_queue.get(), timeout=15.0)
+                    item = await asyncio.wait_for(client_queue.get(), timeout=5.0)
                     yield f"data: {json.dumps(item)}\n\n"
                 except asyncio.TimeoutError:
                     yield ": keep-alive\n\n"
@@ -465,26 +375,12 @@ async def stream_logs(request: Request):
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
-# for the 'restart server' button
-def run_launch_script():
-    # Terminate current server instance
-    os.kill(os.getpid(), signal.SIGINT)
-    # runs launch.bat in a separate process
-    subprocess.Popen(["launch.bat"], shell=True, creationflags=subprocess.CREATE_NEW_CONSOLE)
-
-
-@app.post("/api/restart")
-def restart_server(background_tasks: BackgroundTasks):
-    # Schedules execution immediately after the response is sent
-    background_tasks.add_task(run_launch_script)
-    return {"message": "Server restarting..."}
-
 # for the 'stop server' button
 @app.post("/api/shutdown")
 def shutdown_server():
-    # Sends a SIGINT signal to the process, stopping uvicorn and closing the cmd window
     os.kill(os.getpid(), signal.SIGINT)
     return {"message": "Server shutting down..."}
+
 
 @app.get("/")
 @app.get("/index.html")

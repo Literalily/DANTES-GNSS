@@ -6,6 +6,7 @@
 #f4f6f8 - Off White
 #E30613 - QUB signature red
 #A62321 - Darker QUB red 
+#222222 - Font black
 */
 
 /* =-=-=-= RESET =-=-=-= */
@@ -20,17 +21,17 @@ html {
 }
 
 body {
-    font-family: Arial, Helvetica, sans-serif;
-    font-size: 16px;
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 1rem;
     background-color: #fff;
-    color: #222;
+    color: #222222;
 }
 
 #page-container {
     position: relative;
     min-height: 100vh;
-    padding: 10px 20px;
-    padding-bottom: 60px;
+    padding: 0.625rem 1.25rem;
+    padding-bottom: 3.75rem;
 }
 
 /* =-=-=-=-= HEADER =-=-=-=-= */
@@ -39,22 +40,22 @@ header {
     top: 0;
     left: 0;
     right: 0;
-    height: 120px;
+    height: 7.5rem;
     z-index: 999;
     display: flex;
     align-items: center;
     justify-content: space-around;
     background: #E30613;
     color: #fff;
-    padding: 0 26px;
+    padding: 0 1.625rem;
 }
 
 .header-title {
-    font-size: 40px;
+    font-size: 2.5rem;
     font-weight: bold;
     color: #fff;
-    padding-left: 30px;
-    padding-right: 30px;
+    padding-left: 2rem;
+    padding-right: 2rem;
 }
 
 .header-title span {
@@ -69,13 +70,13 @@ header {
 .header-badge {
     display: inline-block;
     background-color: rgba(255, 255, 255, 0.15);
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    border: 0.063rem solid rgba(255, 255, 255, 0.3);
     color: #f4f6f8;
-    font-size: 15px;
+    font-size: 1rem;
     font-weight: bold;
-    padding: 4px 10px;
-    border-radius: 12px;
-    margin-bottom: 6px;
+    padding: 0.25rem 0.625rem;
+    border-radius: 0.8rem;
+    margin-bottom: 0.4rem;
 }
 
 /* =-=-=-=-= NAV BAR =-=-=-=-= */
@@ -86,22 +87,22 @@ nav {
     top: 0;
     left: 0;
     width: 100%;
-    height: 50px;
+    height: 3.125rem;
     background-color: #f4f6f8;
-    border-bottom: 1px solid #dddddd;
+    border-bottom: 0.06rem solid #dddddd;
     display: flex;
-    padding: 0 24px;
+    padding: 1.8rem 0.5rem;
     z-index: 1000;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 0.13rem 0.3rem rgba(0, 0, 0, 0.05);
 }
 
 .nav-section {
-    font-size: 13px;
+    font-size: 1rem;
     font-weight: bold;
     color: #999;
     text-transform: uppercase;
-    margin-right: 40px;
-    margin-left: 40px;
+    margin-right: 3rem;
+    margin-left: 3rem;
     text-decoration: none;
 }
 
@@ -113,17 +114,17 @@ nav .nav-section:first-child {
 .nav-link {
     color: #414141;
     text-decoration: none;
-    padding: 15px 20px;
+    padding: 0.9rem 1.3rem;
     transition: all 0.2s ease;
-    border-bottom: 2px solid transparent;
+    border-bottom: 0.13rem solid transparent;
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 0.5rem;
 }
 
 .nav-link:hover {
     color: #E30613;
-    border-bottom: 2px solid #E30613;
+    border-bottom: 0.13rem solid #E30613;
     font-style: normal;
 }
 
@@ -132,7 +133,7 @@ nav .nav-section:first-child {
 }
 
 .iconImage {
-    width: 30px;
+    width: 1.875rem;
     aspect-ratio: 1/1;
     display: flex;
     align-items: center;
@@ -140,18 +141,18 @@ nav .nav-section:first-child {
 }
 
 .cardButton {
-    padding: 10px;
+    padding: 0.6rem;
     background: #E30613;
     color: white;
     border: none;
     cursor: pointer;
     transition: all 0.2s ease;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-    font-size: 15px;
+    border: 0.06rem solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 0.06rem 0.3rem rgba(0, 0, 0, 0.15);
+    font-size: 1rem;
     font-weight: bold;
-    border-radius: 6px;
-    height: 40px;
+    border-radius: 0.4rem;
+    height: 3rem;
 }
 
 .cardButton:hover {
@@ -168,31 +169,159 @@ footer {
     color: #f4f6f8;
     text-align: center;
     display: block;
-    padding: 6px;
+    padding: 0.4rem;
+}
+
+/* =-=-=-=-= SETUP GUIDE =-=-=-=-= */
+.setup-card {
+    margin-top: 1.3rem;
+    padding: 0.9rem 1.3rem;
+}
+
+.setup-card h3 {
+    cursor: pointer;
+    list-style: none;
+    font-size: 2rem;
+    font-weight: bold;
+    color: #A62321;
+    padding: 0.3rem 0;
+    text-align: center;
+}
+
+.setup-body h2 {
+    font-size: 1.5rem;
+    color: #E30613;
+    margin-top: 1.1rem;
+    margin-bottom: 0.4rem;
+}
+
+.setup-body {
+    margin-top: 0.8rem;
+    line-height: 1.6;
+    font-size: 1.2rem;
+    color: #2c2c2c;
+}
+
+.setup-body h2:first-child {
+    margin-top: 0;
+}
+
+.setup-body p {
+    margin-bottom: 0.4rem;
+}
+
+.setup-body code {
+    background: #eee;
+    padding: 0.06rem 0.4rem;
+    border-radius: 0.3rem;
+    font-family: "Courier New", monospace;
+    font-size: 1.1rem;
+}
+
+.setup-body a {
+    color: #A62321;
+    font-weight: bold;
+}
+
+.setup-steps {
+    margin: 0.375rem 0 0.625rem 1.375rem;
+}
+
+.setup-steps li {
+    margin-bottom: 0.25rem;
+}
+
+.setup-note {
+    font-size: 1rem;
+    color: #777;
+    border-left: 0.188rem solid #E30613;
+    padding-left: 0.625rem;
+    margin: 0.5rem 0;
+}
+
+.setup-table {
+    margin: 0.5rem 0 0.75rem;
+    width: 100%;
+    font-size: 1.2rem;
+}
+
+/* ====== setup gide button */
+dialog {
+    padding-inline: 2rem;
+    border-radius: 1rem;
+}
+
+dialog form {
+    display: grid;
+    gap: 1rem;
+}
+
+dialog[open] {
+    display: grid;
+
+    button[command="close"] {
+        justify-self: end;
+        cursor: pointer;
+        border: none;
+        background-color: white;
+
+        svg {
+            width: 1.5rem;
+        }
+    }
+}
+
+.actions-btn {
+    grid-column: 1/ -1;
+    place-self: center;
+    display: flex;
+    gap: 2rem;
+
+    button {
+        padding: 0.2rem 0.8rem;
+        cursor: pointer;
+    }
+}
+
+button[type="close"] {
+    background: #E30613;
+    color: white;
+    transition: all 0.2s ease;
+    border: 0.063rem solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 0.063rem 0.25rem rgba(0, 0, 0, 0.15);
+    border-radius: 0.2rem;
+}
+
+button[type="close"]:hover {
+    background: #A62321;
+}
+
+dialog::backdrop {
+    background: rgba(238, 157, 157, 0.5);
 }
 
 /* =-=-=-=-= DASHBOARD CARDS =-=-=-=-= */
 .dashboard-grid {
     display: flex;
-    gap: 20px;
-    padding: 5px;
-    margin-bottom: 20px;
+    gap: 1.25rem;
+    padding: 0.375rem;
+    margin-bottom: 1.25rem;
 }
 
 .dashboard-grid.map-row {
     display: grid;
     grid-template-columns: 3fr 2fr;
-    gap: 20px;
+    gap: 1.25rem;
     width: 100%;
     align-items: flex-start;
 }
 
 .card {
     background: #f4f6f8;
-    padding: 15px;
-    margin-top: 20px;
-    border-radius: 5px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    padding: 1rem;
+    margin-top: 1.25rem;
+    border-radius: 0.375rem;
+    box-shadow: 0 0.125rem 0.5rem rgba(0, 0, 0, 0.15);
     height: 100%;
     display: flex;
     flex-direction: column;
@@ -200,24 +329,24 @@ footer {
     scrollbar-width: thin;
     scrollbar-color: #888 #f1f1f1;
     width: 100%;
-    min-height: 400px;
+    min-height: 25rem;
 
 }
 
 .card:hover {
-    transform: translateY(-3px);
+    transform: translateY(-0.188rem);
     transition: 0.1s;
-    border-bottom: 5px solid rgb(227, 6, 19);
+    border-bottom: 0.313rem solid rgb(227, 6, 19);
 }
 
 .dashboard-grid #card {
     flex: 1;
     min-width: 0;
-    height: 600px;
+    height: 37.5rem;
 }
 
 /* Responsive layout - switches to a stacked column only when the screen shrinks below 900px */
-@media (max-width: 900px) {
+@media (max-width: 56.25rem) {
     .dashboard-grid {
         flex-direction: column;
     }
@@ -241,33 +370,29 @@ footer {
 
 .deviationChartBox {
     position: relative;
-    /* height: 350px; */
     width: 100%;
     aspect-ratio: 1/1;
-    max-width: 760px;
-    margin: 10px auto 0;
+    max-width: 47.5rem;
+    margin: 0.625rem auto 0;
     background: radial-gradient(circle, #fff 0%, #f4f6f8 100%);
-    border-radius: 10px;
-    /* box-shadow: inset 0 0 45px rgba(255, 254, 253, 0.25), 0 2px 8px #f4f6f8; */
-    padding: 12px;
+    border-radius: 0.625rem;
+    padding: 0.75rem;
 }
-
-/* =-=-=-=-= CARD 2 =-=-=-=-= */
 
 /* =-=-=-=-= STATUS BOX =-=-=-=-= */
 /* hidden by default */
 .status-badge {
     display: none;
     background-color: rgba(255, 255, 255, 0.15);
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    border: 0.063rem solid rgba(255, 255, 255, 0.3);
     color: #000000;
-    font-size: 20px;
-    padding: 8px 8px;
-    border-radius: 12px;
-    margin-bottom: 6px;
+    font-size: 1.25rem;
+    padding: 0.5rem 0.5rem;
+    border-radius: 0.75rem;
+    margin-bottom: 0.375rem;
     text-align: center;
     align-items: center;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.05);
 }
 
 .status-badge.status-badge-active {
@@ -281,7 +406,7 @@ footer {
 
 .stats-tables-row {
     display: flex;
-    gap: 20px;
+    gap: 1.25rem;
     flex-wrap: wrap;
     width: 100%;
 }
@@ -289,23 +414,23 @@ footer {
 .stats-table {
     border-collapse: collapse;
     flex: 1;
-    min-width: 340px;
+    min-width: 21.25rem;
     background: #FFFFFF;
 }
 
 .stats-table th {
     background-color: #E30613;
     color: #FFFFFF;
-    padding: 8px 10px;
+    padding: 0.5em 0.625rem;
     text-align: center;
-    border: 1px solid #FFFFFF;
+    border: 0.063rem solid #FFFFFF;
 }
 
 .stats-table td {
-    padding: 6px 10px;
+    padding: 0.375rem 0.625rem;
     text-align: center;
-    border: 1px solid #dddddd;
-    font-size: 14px;
+    border: 0.06rem solid #dddddd;
+    font-size: 0.875rem;
 }
 
 .stats-table tr.stats-stripe-a td {
@@ -325,6 +450,6 @@ footer {
 
 .stats-note {
     color: #777;
-    font-size: 13px;
-    margin-top: 10px;
+    font-size: 0.8rem;
+    margin-top: 0.625rem;
 }
