@@ -18,9 +18,25 @@ let nextColorIndex = 0;
 // Safety cap for load times (oldest points are dropped once baseline passes this)
 const MAX_CLIENT_POINTS = 5000;
 
+// receiver port 5000 is the common RTK base for both receivers/rovers, so it is always fixed (0,0)
+const BASE_STATION_LABEL = '5000 (Base)';
+function makeBaseStationDataset() {
+    return {
+        label: BASE_STATION_LABEL,
+        data: [{ x: 0, y: 0, u: 0, distance: 0, q: 1, time: 'Fixed reference' }],
+        showLine: false,
+        pointStyle: 'rectRot', // 'rectRot' is diamond, can also be 'circle', 'crossRot', 'star', 'triangle'
+        pointRadius: 8,
+        pointBackgroundColor: 'rgba(141, 84, 127, 0.9)',
+        pointBorderColor: '#ffffff',
+        pointBorderWidth: 1.5,
+    };
+}
+
 /* =-=-=-=-= LOAD CHARTS =-=-=-=-= */
 document.addEventListener("DOMContentLoaded", async () => {
     initChart();
+    updateLastDeviationDisplay(); // show "No deviations detected yet." until history loads
     await loadInitialHistory(); // one-off fetch of everything recorded before this page loaded
     connectLiveStream(); // live push connection for everything after that
 
@@ -84,10 +100,18 @@ const circularGridPlugin = {
 /* =-=-=-=-= COLOUR HELPER =-=-=-=-= */
 function fadeColor([r, g, b], index, total) {
     if (total <= 1) return `rgba(${r}, ${g}, ${b}, 1)`;
-    const minOpacity = 0.25;
+    const minOpacity = 0.001;
     const t = index / (total - 1);
     const opacity = minOpacity + (1 - minOpacity) * t;
     return `rgba(${r}, ${g}, ${b}, ${opacity.toFixed(3)})`;
+}
+
+// darken the newest point
+function darkenColor([r, g, b], factor = 0.6) {
+    const dr = Math.round(r * factor);
+    const dg = Math.round(g * factor);
+    const db = Math.round(b * factor);
+    return `rgba(${dr}, ${dg}, ${db}, 1)`;
 }
 
 // new baselines are assigned the next palette colour
@@ -137,14 +161,19 @@ function syncDatasetsFromBaselines() {
             segment: {
                 borderColor: (ctx) => fadeColor(series.color, ctx.p0DataIndex, series.points.length)
             },
-            pointBackgroundColor: (ctx) => fadeColor(series.color, ctx.dataIndex, series.points.length),
-            pointBorderWidth: 0,
-            pointRadius: (ctx) => ctx.dataIndex === series.points.length - 1 ? 7 : 2,
+            pointBackgroundColor: (ctx) => {
+                const isLatest = ctx.dataIndex === series.points.length - 1;
+                return isLatest ? darkenColor(series.color) : fadeColor(series.color, ctx.dataIndex, series.points.length);
+            },
+            pointBorderColor: (ctx) => ctx.dataIndex === series.points.length - 1 ? '#222222' : 'transparent',
+            pointBorderWidth: (ctx) => ctx.dataIndex === series.points.length - 1 ? 1.5 : 0,
+            pointRadius: (ctx) => ctx.dataIndex === series.points.length - 1.25 ? 7 : 2, //todo lily i broke dis
             tension: 0.1
         };
     }).filter(Boolean);
 
-    deviationChart.data.datasets = datasets;
+    // fixed port 5000 reference
+    deviationChart.data.datasets = [makeBaseStationDataset(), ...datasets];
 
     const bound = computeSymmetricBounds(datasets);
     deviationChart.options.scales.x.min = -bound;
@@ -183,6 +212,9 @@ function initChart() {
                     callbacks: {
                         title: (items) => items.length ? `Baseline: ${items[0].dataset.label}` : '',
                         label: (ctx) => {
+                            if (ctx.dataset.label === BASE_STATION_LABEL) {
+                                return 'Fixed reference position (base of both baselines)';
+                            }
                             const pt = ctx.raw;
                             return `Time: ${pt.time} | E: ${pt.x.toFixed(4)}m, N: ${pt.y.toFixed(4)}m, U: ${pt.u.toFixed(4)}m | ` +
                                 `Dist: ${pt.distance.toFixed(4)}m | Q: ${pt.q}`;
@@ -218,6 +250,30 @@ async function loadInitialHistory() {
     } catch (err) {
         console.error("Failed to load historical logs:", err);
     }
+
+}
+/* =-=-=-=-= LAST DEVIATION LOG (under Status card) =-=-=-=-= */
+// Tracks the most recent point of status was not normal (so warning or alarm)
+let lastDeviation = null; // { time, baseline, status }
+function trackDeviation(pt) {
+    if (pt.status !== 'warning' && pt.status !== 'alarm') return;
+    // Points can arrive out of order while loading history; only overwrite
+    // if this one is at least as recent (string comparison works since the
+    // server timestamp format "YYYY/MM/DD HH:MM:SS.ss" sorts lexically).
+    if (!lastDeviation || pt.time >= lastDeviation.time) {
+        lastDeviation = { time: pt.time, baseline: pt.baseline, status: pt.status };
+    }
+    updateLastDeviationDisplay();
+}
+function updateLastDeviationDisplay() {
+    const el = document.getElementById('last-deviation-log');
+    if (!el) return;
+    if (!lastDeviation) {
+        el.textContent = 'No deviations detected yet.';
+        return;
+    }
+    el.textContent = `Last ${lastDeviation.status.toUpperCase()} on baseline ${lastDeviation.baseline} at ${lastDeviation.time}.`;
+
 }
 
 /* =-=-=-=-= SYSTEM STATUS BADGE =-=-=-=-= */
@@ -298,6 +354,7 @@ function addPointToState(pt) {
         series.points.splice(0, series.points.length - MAX_CLIENT_POINTS);
     }
     latestByBaseline.set(pt.baseline, point);
+    trackDeviation(pt);
 }
 
 function handleIncomingPoint(pt) {
@@ -320,7 +377,7 @@ function updateLiveReadout() {
         const deviationMm = ((pt.distance - pt.nominal) * 1000).toFixed(1);
         lines.push(
             `<b>${name}:</b> ${pt.distance.toFixed(4)}m (target: ${pt.nominal.toFixed(2)}m, ` +
-            `actual: ${deviationMm}mm) - ${QUALITY_LABELS[pt.q] || pt.q} - ${pt.time}`
+            `deviation: ${deviationMm}mm) - ${QUALITY_LABELS[pt.q] || pt.q} - ${pt.time}`
         );
     });
     statsElem.innerHTML = lines.join('<br>');

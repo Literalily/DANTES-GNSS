@@ -270,6 +270,11 @@ footer {
     font-size: 1.2rem;
 }
 
+.demoImages {
+    width: 40%;
+    box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.15);
+}
+
 /* ====== setup guide  */
 dialog #guide-dialog {
     padding: 2rem;
