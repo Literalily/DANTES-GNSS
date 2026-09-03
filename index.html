@@ -21,7 +21,8 @@
         <div class="nav-section">Options: </div>
 
         <div class="nav-section">
-            <button class="cardButton" command="show-modal" commandfor="contact-dialog">Setup Guide</button>
+            <button class="cardButton" type="button"
+                onclick="document.getElementById('guide-dialog').showModal()">Setup Guide</button>
         </div>
         <img class="iconImage" src="assets/compassFavicon.png">
 
@@ -49,10 +50,13 @@
     <div id="page-container">
 
         <!-- setup gyide popup -->
-        <dialog id="contact-dialog">
-            <button command="close" commandfor="contact-dialog" aria-label="close modal">&times;</button>
+        <dialog id="guide-dialog">
+            <!-- <button type="submit" aria-label="close modal">&times;</button> -->
 
-            <form>
+            <form method="dialog">
+                <div class="actions-btn">
+                    <button type="submit">&times;</button>
+                </div>
                 <div id="setup-guide" class="card setup-card">
                     <h3>DANTES-GNSS : Setup Guide</h3>
 
@@ -176,7 +180,7 @@
                             style="width: 30%; align-items: center; justify-content: center;">
 
 
-                        <h2>Step 3. Start the dashboard</h2>
+                        <h2>Step 4. Start the dashboard</h2>
                         <p>Run <code>launch.bat</code>. It sets up the Python virtual environment, installs
                             <code>requirements.txt</code>, and starts <code>server.py</code>, which connects to both
                             RTKNAVI solution ports and opens this dashboard automatically.
@@ -193,7 +197,7 @@
                 </div>
 
                 <div class="actions-btn">
-                    <button type="close" commandfor="contact-dialog">Close</button>
+                    <button type="submit">Close</button>
                 </div>
             </form>
         </dialog>
@@ -231,9 +235,10 @@
 
                 <div id="pairDistanceSummary" class="deviationChartStats">Loading distances between baselines...</div>
 
-                <img src="assets/spoofingDiagram.png"
-                    alt="A diagram of GNSS spoofing taken from the paper GNSS_Time_Signal_Spoofing_Detector_for_Electrical_Substations"
-                    style="width: 50%; align-items: center;">
+                <div>
+                    <h1><br>Spoofing History</h1>
+                    <p>Alarm last sounded at: [date] [time].</p>
+                </div>
             </div>
         </div>
 

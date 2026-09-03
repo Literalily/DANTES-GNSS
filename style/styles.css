@@ -4,8 +4,9 @@
 /*
 #FFFFFF - White
 #f4f6f8 - Off White
-#E30613 - QUB signature red
-#A62321 - Darker QUB red 
+#E30613 - signature red
+#A62321 - Dark red 
+#642322 - darkest red espresso
 #222222 - Font black
 */
 
@@ -32,6 +33,36 @@ body {
     min-height: 100vh;
     padding: 0.625rem 1.25rem;
     padding-bottom: 3.75rem;
+}
+
+h1 {
+    font-size: 2.2rem;
+    font-weight: bold;
+    /* color: #222222; */
+    color: #222222;
+    padding-bottom: 2.5%;
+    /* text-align: center; */
+}
+
+h1:hover {
+    color: #642322;
+    transition: all 0.2s ease;
+}
+
+h3 {
+    list-style: none;
+    font-size: 2rem;
+    font-weight: bold;
+    color: #A62321;
+    padding: 0.3rem 0;
+    text-align: center;
+}
+
+h2 {
+    font-size: 1.5rem;
+    color: #E30613;
+    margin-top: 1.1rem;
+    margin-bottom: 0.4rem;
 }
 
 /* =-=-=-=-= HEADER =-=-=-=-= */
@@ -173,13 +204,7 @@ footer {
 }
 
 /* =-=-=-=-= SETUP GUIDE =-=-=-=-= */
-.setup-card {
-    margin-top: 1.3rem;
-    padding: 0.9rem 1.3rem;
-}
-
 .setup-card h3 {
-    cursor: pointer;
     list-style: none;
     font-size: 2rem;
     font-weight: bold;
@@ -245,30 +270,38 @@ footer {
     font-size: 1.2rem;
 }
 
-/* ====== setup gide button */
-dialog {
-    padding-inline: 2rem;
-    border-radius: 1rem;
+/* ====== setup guide  */
+dialog #guide-dialog {
+    padding: 2rem;
+    border: none;
+    border-radius: 0.75rem;
+    background: #f4f6f8;
+    box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.35);
+    width: 90vw;
+    max-width: 52rem;
+    max-height: 85vh;
+    margin: auto;
+    /* centres it */
+    overflow-y: auto;
+    position: relative;
+}
+
+dialog#guide-dialog[open] {
+    display: flex;
+    flex-direction: column;
+}
+
+dialog .setup-card {
+    background: transparent;
+    box-shadow: none;
+    margin: 0;
+    padding: 0;
+    min-height: auto;
 }
 
 dialog form {
     display: grid;
     gap: 1rem;
-}
-
-dialog[open] {
-    display: grid;
-
-    button[command="close"] {
-        justify-self: end;
-        cursor: pointer;
-        border: none;
-        background-color: white;
-
-        svg {
-            width: 1.5rem;
-        }
-    }
 }
 
 .actions-btn {
@@ -278,26 +311,27 @@ dialog[open] {
     gap: 2rem;
 
     button {
+        top: 1rem;
         padding: 0.2rem 0.8rem;
         cursor: pointer;
+        background: #E30613;
+        color: white;
+        transition: all 0.2s ease;
+        border: 0.063rem solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 0.063rem 0.25rem rgba(0, 0, 0, 0.15);
+        border-radius: 0.2rem;
+        font-size: 1.2rem;
+    }
+
+    button:hover {
+        background: #A62321;
     }
 }
 
-button[type="close"] {
-    background: #E30613;
-    color: white;
-    transition: all 0.2s ease;
-    border: 0.063rem solid rgba(255, 255, 255, 0.3);
-    box-shadow: 0 0.063rem 0.25rem rgba(0, 0, 0, 0.15);
-    border-radius: 0.2rem;
-}
-
-button[type="close"]:hover {
-    background: #A62321;
-}
-
 dialog::backdrop {
-    background: rgba(238, 157, 157, 0.5);
+    /* background: rgba(0, 0, 0, 0.6); */
+    background: rgb(252, 131, 129, 0.3);
+    backdrop-filter: blur(4px);
 }
 
 /* =-=-=-=-= DASHBOARD CARDS =-=-=-=-= */

@@ -18,14 +18,6 @@ let nextColorIndex = 0;
 // Safety cap for load times (oldest points are dropped once baseline passes this)
 const MAX_CLIENT_POINTS = 5000;
 
-// for the setup guide button
-const dialog = document.getElementById("contact-dialog");
-const formElement = document.querySelector("form");
-formElement.addEventListener("close", (e) => {
-    e.preventDefault();
-    dialog.close();
-});
-
 /* =-=-=-=-= LOAD CHARTS =-=-=-=-= */
 document.addEventListener("DOMContentLoaded", async () => {
     initChart();
@@ -327,8 +319,8 @@ function updateLiveReadout() {
     latestByBaseline.forEach((pt, name) => {
         const deviationMm = ((pt.distance - pt.nominal) * 1000).toFixed(1);
         lines.push(
-            `<b>${name}:</b> ${pt.distance.toFixed(4)}m (target ${pt.nominal.toFixed(2)}m, ` +
-            `&Delta;${deviationMm}mm) &mdash; ${QUALITY_LABELS[pt.q] || pt.q} &mdash; ${pt.time}`
+            `<b>${name}:</b> ${pt.distance.toFixed(4)}m (target: ${pt.nominal.toFixed(2)}m, ` +
+            `actual: ${deviationMm}mm) - ${QUALITY_LABELS[pt.q] || pt.q} - ${pt.time}`
         );
     });
     statsElem.innerHTML = lines.join('<br>');
