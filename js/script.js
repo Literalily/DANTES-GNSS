@@ -100,7 +100,7 @@ const circularGridPlugin = {
 /* =-=-=-=-= COLOUR HELPER =-=-=-=-= */
 function fadeColor([r, g, b], index, total) {
     if (total <= 1) return `rgba(${r}, ${g}, ${b}, 1)`;
-    const minOpacity = 0.001;
+    const minOpacity = 0.05;
     const t = index / (total - 1);
     const opacity = minOpacity + (1 - minOpacity) * t;
     return `rgba(${r}, ${g}, ${b}, ${opacity.toFixed(3)})`;
@@ -112,6 +112,19 @@ function darkenColor([r, g, b], factor = 0.6) {
     const dg = Math.round(g * factor);
     const db = Math.round(b * factor);
     return `rgba(${dr}, ${dg}, ${db}, 1)`;
+}
+
+// makes date DD/MM/YYYY HH:MM:SS
+
+function formatTimestamp(date) {
+    const pad = (n) => String(n).padStart(2, '0');
+    const day = pad(date.getDate());
+    const month = pad(date.getMonth() + 1);
+    const year = date.getFullYear();
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    const seconds = pad(date.getSeconds());
+    return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
 }
 
 // new baselines are assigned the next palette colour
@@ -167,7 +180,7 @@ function syncDatasetsFromBaselines() {
             },
             pointBorderColor: (ctx) => ctx.dataIndex === series.points.length - 1 ? '#222222' : 'transparent',
             pointBorderWidth: (ctx) => ctx.dataIndex === series.points.length - 1 ? 1.5 : 0,
-            pointRadius: (ctx) => ctx.dataIndex === series.points.length - 1.25 ? 7 : 2, //todo lily i broke dis
+            pointRadius: (ctx) => ctx.dataIndex === series.points.length - 1.25 ? 7 : 2,
             tension: 0.1
         };
     }).filter(Boolean);
@@ -246,21 +259,28 @@ async function loadInitialHistory() {
             syncDatasetsFromBaselines();
             deviationChart.update();
             updateLiveReadout();
+            refreshSystemStatus();
         }
     } catch (err) {
         console.error("Failed to load historical logs:", err);
     }
 
 }
-/* =-=-=-=-= LAST DEVIATION LOG (under Status card) =-=-=-=-= */
+// =-=-=-=-= LAST DEVIATION LOG (under Status card) =-=-=-=-= 
+// get the DD/MM/YYYY into a millisecond value
+function parseServerTimestamp(str) {
+    const [datePart, timePart] = (str || '').split(' ');
+    if (!datePart || !timePart) return NaN;
+    const [day, month, year] = datePart.split('/').map(Number);
+    const [hh, mm, ss] = timePart.split(':').map(Number);
+    return new Date(year, month - 1, day, hh, mm, ss).getTime();
+}
 // Tracks the most recent point of status was not normal (so warning or alarm)
 let lastDeviation = null; // { time, baseline, status }
 function trackDeviation(pt) {
     if (pt.status !== 'warning' && pt.status !== 'alarm') return;
-    // Points can arrive out of order while loading history; only overwrite
-    // if this one is at least as recent (string comparison works since the
-    // server timestamp format "YYYY/MM/DD HH:MM:SS.ss" sorts lexically).
-    if (!lastDeviation || pt.time >= lastDeviation.time) {
+    // get most recent point
+    if (!lastDeviation || parseServerTimestamp(pt.time) >= parseServerTimestamp(lastDeviation.time)) {
         lastDeviation = { time: pt.time, baseline: pt.baseline, status: pt.status };
     }
     updateLastDeviationDisplay();
@@ -273,7 +293,54 @@ function updateLastDeviationDisplay() {
         return;
     }
     el.textContent = `Last ${lastDeviation.status.toUpperCase()} on baseline ${lastDeviation.baseline} at ${lastDeviation.time}.`;
+}
 
+// =-=-=-=-= CONNECTION HEALTH =-=-=-=-=
+// checking if the RTKNAVI/STRSVR has disconnected by polling the server for how long it's been since each baseline last produced a point
+const CONNECTION_POLL_MS = 1000;
+let connectionHealth = {}; // connectionHealth = { baselineName: { is_connected, error_message, seconds_since_last_packet, is_stale } }
+
+async function pollConnectionHealth() {
+    try {
+        const response = await fetch('api/connection/status');
+        connectionHealth = await response.json();
+    } catch (err) {
+        console.warn("Failed to fetch connection health: ", err);
+        return;
+    }
+    refreshSystemStatus();
+}
+
+/* =-=-=-=-= SPOOFING COINCIDENCE CHECK =-=-=-=-= */
+// if the receivers snap to the same position, it is absolute proof that spoofing is occuring
+const SPOOFING_COINCIDENCE_TOLERANCE_M = 0.01; // 1cm allows for receiver noise while still catching receivers in the same spot
+function detectPositionCoincidence() {
+    const baselines = Array.from(latestByBaseline.entries());
+    for (let i = 0; i < baselines.length; i++) {
+        for (let j = i + 1; j < baselines.length; j++) {
+            const [nameA, ptA] = baselines[i];
+            const [nameB, ptB] = baselines[j];
+            const dE = Math.abs(ptA.e - ptB.e);
+            const dN = Math.abs(ptA.n - ptB.n);
+            const dU = Math.abs(ptA.u - ptB.u);
+            if (dE < SPOOFING_COINCIDENCE_TOLERANCE_M && dN < SPOOFING_COINCIDENCE_TOLERANCE_M && dU < SPOOFING_COINCIDENCE_TOLERANCE_M) {
+                return { nameA, nameB };
+            }
+        }
+    }
+    return null;
+}
+// additive flag shown alongside the status badge
+function setSpoofingDetected(isDetected, detail) {
+    const el = document.getElementById('status-badge-spoofing-detected');
+    if (!el) return;
+    el.classList.toggle('status-badge-active', isDetected);
+    const detailEl = document.getElementById('spoofing-detected-detail');
+    if (detailEl) {
+        detailEl.textContent = isDetected
+            ? detail
+            : '(multiple baselines report an identical position)';
+    }
 }
 
 /* =-=-=-=-= SYSTEM STATUS BADGE =-=-=-=-= */
@@ -302,14 +369,27 @@ function setSystemStatus(state, detailMessage) {
 
 // Looks across each baseline's most recent point and shows the worst status
 const STATUS_SEVERITY = { normal: 0, warning: 1, alarm: 2 };
-function refreshWorstCaseStatus() {
+function refreshSystemStatus() {
     let worst = 'normal';
     latestByBaseline.forEach(pt => {
         if (STATUS_SEVERITY[pt.status] > STATUS_SEVERITY[worst]) {
             worst = pt.status;
         }
     });
-    setSystemStatus(worst);
+    // check if connection is stale
+    let connectionDetail = null;
+    Object.entries(connectionHealth).forEach(([name, health]) => {
+        if (health.is_stale) {
+            worst = 'error';
+            const age = health.seconds_since_last_packet;
+            const ageText = (age === null || age === undefined) ? 'the start' : `${age.toFixed(1)}s ago`;
+            connectionDetail = health.error_message || `[${formatTimestamp(new Date())}] Baseline ${name}: no solution data received (last packet ${ageText}). Check RTKNAVI/STRSVR are still running.`;
+        }
+    });
+    setSystemStatus(worst, connectionDetail);
+
+    const coincidence = detectPositionCoincidence();
+    setSpoofingDetected(!!coincidence, coincidence && `Baselines ${coincidence.nameA} and ${coincidence.nameB} are reporting the same position - possible spoofing attack.`);
 }
 
 /* =-=-=-=-= FETCH LIVE UPDATES =-=-=-=-= */
@@ -319,7 +399,7 @@ function connectLiveStream() {
     liveStreamSource = new EventSource('/api/logs/stream');
 
     liveStreamSource.onopen = () => {
-        // let refreshWorstCaseStatus() decide if NORMAL once real data starts arriving, so it doesn't flash green then alarm
+        // let refreshSystemStatus() decide if NORMAL once real data starts arriving, so it doesn't flash green then alarm
     };
 
     liveStreamSource.onmessage = (event) => {
@@ -328,7 +408,7 @@ function connectLiveStream() {
     };
 
     liveStreamSource.onerror = () => {
-        const timestamp = new Date().toLocaleTimeString();
+        const timestamp = formatTimestamp(new Date());
         setSystemStatus('error',
             `[${timestamp}] Lost connection to /api/logs/stream. Possible cause: ` +
             `server.py has been stopped or the launch.bat window was closed. `
@@ -362,7 +442,7 @@ function handleIncomingPoint(pt) {
     syncDatasetsFromBaselines();
     deviationChart.update('none'); // Render update without completely redrawing the chart
     updateLiveReadout();
-    refreshWorstCaseStatus();
+    refreshSystemStatus();
 }
 
 /* =-=-=-=-= LIVE READOUT (Card 1) =-=-=-=-= */
@@ -459,5 +539,11 @@ function renderDistanceStatsTables(json) {
 
     container.innerHTML = `<div class="stats-tables-row">${table}</div>${cappedNote}`;
 }
+
+// connection health polling loop
+document.addEventListener("DOMContentLoaded", () => {
+    pollConnectionHealth();
+    setInterval(pollConnectionHealth, CONNECTION_POLL_MS);
+});
 
 window.stopServer = stopServer;

@@ -94,6 +94,9 @@ connection_status = {
     for b in BASELINES
 }
 
+# for checking if connection is stale and then alerting the dashboard
+CONNECTION_STALE_THRESHOLD = 2.5
+
 
 # =-=-=-=-= PARSE RTKLIB SOLUTION LINES =-=-=-=-=
 # RTKNAVI's "E/N/U-Baseline" solution stream looks like: date time e n u Q ns sde sdn sdu (sdeu, sdun, sdue, age, ratio)
@@ -117,6 +120,13 @@ def parse_rtklib_solution_line(line, baseline_name):
         num_sats = int(parts[6])
     except ValueError:
         return None  # if it's a corrupted/partial line, skip don't crash the reader thread over this
+
+    # reformat datetime to DD/MM/YYYY
+    try:
+        year, month, day = date_str.split("/")
+        date_str = f"{day}/{month}/{year}"
+    except ValueError:
+        pass
 
     distance_m = math.sqrt(e * e + n * n + u * u)
 
@@ -350,7 +360,30 @@ def get_distance_stats(max_points: int = 20000):
         "capped": capped,
         "baselines": baseline_stats,
     })
-
+    
+@app.get("/api/connection/status")
+def get_connection_status():
+    # reports baseline connection health + alerts the dashboard if connection is stale
+    now = time.time()
+    result = {}
+    for name, status in connection_status.items():
+        last_packet_time = status["last_packet_time"]
+        
+        if last_packet_time == 0:
+            #never received a valid solution line on the connecion attempt
+            seconds_since_last_packet = None
+            is_stale = not status["is_connected"]
+        else:
+            seconds_since_last_packet = round(now - last_packet_time, 1)
+            is_stale = (not status["is_connected"]) or (seconds_since_last_packet > CONNECTION_STALE_THRESHOLD)
+            
+        result[name] = {
+            "is_connected": status["is_connected"],
+            "error_message": status["error_message"],
+            "seconds_since_last_packet": seconds_since_last_packet,
+            "is_stale": is_stale,
+        }
+    return JSONResponse(content=result)
 
 @app.get("/api/logs/stream")
 async def stream_logs(request: Request):

@@ -438,6 +438,13 @@ dialog::backdrop {
     display: block;
 }
 
+.spoofing-icon {
+    height: 1.25vmax;
+    aspect-ratio: 1/1;
+    vertical-align: middle;
+    margin-right: 0.5rem;
+}
+
 /* =-=-=-=-= CARD 3 =-=-=-=-= */
 #distance-stats-card {
     max-width: 100%;

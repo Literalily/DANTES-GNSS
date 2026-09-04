@@ -219,17 +219,35 @@
                 <h1>Status</h1>
 
                 <div id="status-badge-normal" class="status-badge status-badge-active"
-                    style="background-color: #00b38a">
-                    <b>NORMAL</b><br>(baselines within tolerance)
+                    style="background-color: #00b38a;">
+                    <img src="assets/globeFaviconWhite.png" alt="(globe image)" class="spoofing-icon">
+                    <b>NORMAL</b><br>
+                    <span>(baselines within tolerance)</span>
                 </div>
-                <div id="status-badge-warning" class="status-badge" style="background-color: #F2AC42">
-                    <b>WARNING</b><br>(baseline drifting / no fix)
+
+                <div id="status-badge-warning" class="status-badge" style="background-color: #F2AC42;">
+                    <img src="assets/globeSearchFaviconWhite.png" alt="(globe search image)" class="spoofing-icon">
+                    <b>WARNING</b><br>
+                    <span>(baseline drifting / no fix)</span>
                 </div>
-                <div id="status-badge-alarm" class="status-badge" style="background-color: #EA324C">
-                    <b>ALARM: SPOOFING SUSPECTED</b><br>(baseline distance out of tolerance)
+
+                <div id="status-badge-alarm" class="status-badge" style="background-color: #EA324C; color: #ffffff;">
+                    <img src="assets/trackingIconWhite.png" alt="Warning" class="spoofing-icon">
+                    <b>ALARM: SPOOFING SUSPECTED</b><br>
+                    <span>(baseline distance out of tolerance)</span>
                 </div>
-                <div id="status-badge-error" class="status-badge" style="background-color: #A62321; color: aliceblue;">
-                    <b>ERROR</b><br><span id="status-error-detail">(details)</span>
+
+                <div id="status-badge-spoofing-detected" class="status-badge"
+                    style="background-color: #4a0e16; color: #ffffff;">
+                    <img src="assets/warningWhite.png" alt="Warning" class="spoofing-icon">
+                    <b>SPOOFING DETECTED</b><br>
+                    <span id="spoofing-detected-detail">(multiple baselines report an identical position)</span>
+                </div>
+
+                <div id="status-badge-error" class="status-badge" style="background-color: #A62321; color: #ffffff;">
+                    <img src="assets/warningWhite.png" alt="Warning" class="spoofing-icon">
+                    <b>ERROR</b><br>
+                    <span id="status-error-detail">(loading details...)</span>
                 </div>
 
                 <div id="pairDistanceSummary" class="deviationChartStats">Loading distances between baselines...</div>
